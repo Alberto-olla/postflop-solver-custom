@@ -1,5 +1,6 @@
 use crate::interface::*;
 use crate::mutex_like::*;
+use crate::quantization::QuantizationMode;
 use crate::sliceop::*;
 use crate::utility::*;
 use std::io::{self, Write};
@@ -253,25 +254,57 @@ fn solve_recursive<T: Game>(
         let result = fma_slices_uninit(result, &strategy, &cfv_actions);
 
         if game.is_compression_enabled() {
-            // update the cumulative strategy
-            let scale = node.strategy_scale();
-            let decoder = params.gamma_t * scale / u16::MAX as f32;
-            let cum_strategy = node.strategy_compressed_mut();
+            // Update cumulative strategy - dispatch based on precision
+            match (game.quantization_mode(), game.strategy_bits()) {
+                (QuantizationMode::Int16, 8) => {
+                    // 8-bit strategy mode (mixed precision)
+                    let scale = node.strategy_scale();
+                    let decoder = params.gamma_t * scale / u8::MAX as f32;
+                    let cum_strategy_u8 = node.strategy_u8_mut();
 
-            strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
-                *x += (*y as f32) * decoder;
-            });
+                    strategy.iter_mut().zip(&*cum_strategy_u8).for_each(|(x, y)| {
+                        *x += (*y as f32) * decoder;
+                    });
 
-            if !locking.is_empty() {
-                strategy.iter_mut().zip(locking).for_each(|(d, s)| {
-                    if s.is_sign_positive() {
-                        *d = 0.0;
+                    if !locking.is_empty() {
+                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                            if s.is_sign_positive() {
+                                *d = 0.0;
+                            }
+                        })
                     }
-                })
-            }
 
-            let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
-            node.set_strategy_scale(new_scale);
+                    let new_scale = encode_unsigned_strategy_u8(cum_strategy_u8, &strategy);
+                    node.set_strategy_scale(new_scale);
+                }
+                (QuantizationMode::Int16, 16) | (QuantizationMode::Float32, _) => {
+                    // Normal 16-bit mode (or 32-bit mode)
+                    let scale = node.strategy_scale();
+                    let decoder = params.gamma_t * scale / u16::MAX as f32;
+                    let cum_strategy = node.strategy_compressed_mut();
+
+                    strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
+                        *x += (*y as f32) * decoder;
+                    });
+
+                    if !locking.is_empty() {
+                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                            if s.is_sign_positive() {
+                                *d = 0.0;
+                            }
+                        })
+                    }
+
+                    let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
+                    node.set_strategy_scale(new_scale);
+                }
+                (QuantizationMode::Int16, 4) => {
+                    panic!("4-bit strategy not yet implemented");
+                }
+                _ => {
+                    panic!("Invalid quantization/strategy_bits combination");
+                }
+            }
 
             // update the cumulative regret
             let scale = node.regret_scale();

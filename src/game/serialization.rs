@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::interface::*;
+use crate::quantization::*;
 use crate::utility::*;
 use std::cell::Cell;
 use std::ptr;
@@ -47,7 +48,7 @@ impl PostFlopGame {
     #[inline]
     pub fn target_memory_usage(&self) -> u64 {
         match self.target_storage_mode {
-            BoardState::River => match self.is_compression_enabled {
+            BoardState::River => match self.quantization_mode.is_compressed() {
                 false => self.memory_usage().0,
                 true => self.memory_usage().1,
             },
@@ -64,10 +65,23 @@ impl PostFlopGame {
             return [0; 4];
         }
 
-        let num_bytes = if self.is_compression_enabled { 2 } else { 4 };
+        let regrets_bytes = self.quantization_mode.bytes_per_element();
+
+        // Strategy bytes may be different in mixed precision mode
+        let strategy_bytes = if self.quantization_mode == QuantizationMode::Int16 {
+            match self.strategy_bits {
+                16 => 2,  // u16
+                8 => 1,   // u8
+                4 => 1,   // Future: nibbles
+                _ => 2,
+            }
+        } else {
+            regrets_bytes  // Float32 mode: same as regrets
+        };
+
         if self.target_storage_mode == BoardState::River {
             // omit storing the counterfactual values
-            return [num_bytes * self.num_storage as usize, 0, 0, 0];
+            return [strategy_bytes * self.num_storage as usize, 0, 0, 0];
         }
 
         let mut node_index = match self.target_storage_mode {
@@ -81,17 +95,19 @@ impl PostFlopGame {
             node_index -= 1;
             let node = self.node_arena[node_index].lock();
             if num_storage[0] == 0 && !node.is_terminal() && !node.is_chance() {
-                let offset = unsafe { node.storage1.offset_from(self.storage1.as_ptr()) };
+                let offset_strategy = unsafe { node.storage1.offset_from(self.storage1.as_ptr()) };
+                let offset_regrets = unsafe { node.storage2.offset_from(self.storage2.as_ptr()) };
                 let offset_ip = unsafe { node.storage3.offset_from(self.storage_ip.as_ptr()) };
-                let len = num_bytes * node.num_elements as usize;
-                let len_ip = num_bytes * node.num_elements_ip as usize;
-                num_storage[0] = offset as usize + len;
-                num_storage[1] = offset as usize + len;
+                let len_strategy = strategy_bytes * node.num_elements as usize;
+                let len_regrets = regrets_bytes * node.num_elements as usize;
+                let len_ip = regrets_bytes * node.num_elements_ip as usize;
+                num_storage[0] = offset_strategy as usize + len_strategy;
+                num_storage[1] = offset_regrets as usize + len_regrets;
                 num_storage[2] = offset_ip as usize + len_ip;
             }
             if num_storage[3] == 0 && node.is_chance() {
                 let offset = unsafe { node.storage1.offset_from(self.storage_chance.as_ptr()) };
-                let len = num_bytes * node.num_elements as usize;
+                let len = regrets_bytes * node.num_elements as usize;
                 num_storage[3] = offset as usize + len;
             }
         }
@@ -100,7 +116,7 @@ impl PostFlopGame {
     }
 }
 
-static VERSION_STR: &str = "2023-03-19";
+static VERSION_STR: &str = "2026-01-01-mixed-precision";
 
 thread_local! {
     static PTR_BASE: Cell<[*const u8; 2]> = Cell::new([ptr::null(); 2]);
@@ -129,7 +145,10 @@ impl Encode for PostFlopGame {
         self.action_root.encode(encoder)?;
         self.target_storage_mode.encode(encoder)?;
         self.num_nodes.encode(encoder)?;
-        self.is_compression_enabled.encode(encoder)?;
+        // Encode quantization_mode as bool for backward compatibility
+        self.quantization_mode.to_compression_flag().encode(encoder)?;
+        // Encode strategy_bits for mixed precision support
+        self.strategy_bits.encode(encoder)?;
         self.num_storage.encode(encoder)?;
         self.num_storage_ip.encode(encoder)?;
         self.num_storage_chance.encode(encoder)?;
@@ -174,7 +193,7 @@ impl Encode for PostFlopGame {
     }
 }
 
-impl Decode for PostFlopGame {
+impl<C> Decode<C> for PostFlopGame {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         // version check
         let version = String::decode(decoder)?;
@@ -194,7 +213,13 @@ impl Decode for PostFlopGame {
             action_root: Decode::decode(decoder)?,
             storage_mode: Decode::decode(decoder)?,
             num_nodes: Decode::decode(decoder)?,
-            is_compression_enabled: Decode::decode(decoder)?,
+            // Decode compression flag and convert to QuantizationMode for backward compatibility
+            quantization_mode: {
+                let is_compression_enabled: bool = Decode::decode(decoder)?;
+                QuantizationMode::from_compression_flag(is_compression_enabled)
+            },
+            // Decode strategy_bits for mixed precision support
+            strategy_bits: Decode::decode(decoder)?,
             num_storage: Decode::decode(decoder)?,
             num_storage_ip: Decode::decode(decoder)?,
             num_storage_chance: Decode::decode(decoder)?,
@@ -209,7 +234,7 @@ impl Decode for PostFlopGame {
 
         game.target_storage_mode = game.storage_mode;
         if game.storage_mode == BoardState::River && game.state >= State::MemoryAllocated {
-            let num_bytes = if game.is_compression_enabled { 2 } else { 4 };
+            let num_bytes = game.quantization_mode.bytes_per_element() as u64;
             game.storage2 = vec![0; (num_bytes * game.num_storage) as usize];
             game.storage_ip = vec![0; (num_bytes * game.num_storage_ip) as usize];
             game.storage_chance = vec![0; (num_bytes * game.num_storage_chance) as usize];
@@ -292,7 +317,7 @@ impl Encode for PostFlopNode {
     }
 }
 
-impl Decode for PostFlopNode {
+impl<C> Decode<C> for PostFlopNode {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         // node instance
         let mut node = Self {

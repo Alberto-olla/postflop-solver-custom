@@ -77,6 +77,36 @@ pub trait Game: Send + Sync {
     fn is_compression_enabled(&self) -> bool {
         false
     }
+
+    /// Returns the quantization mode.
+    #[doc(hidden)]
+    fn quantization_mode(&self) -> crate::quantization::QuantizationMode {
+        crate::quantization::QuantizationMode::Float32
+    }
+
+    /// Returns whether lazy normalization is enabled.
+    #[doc(hidden)]
+    fn is_lazy_normalization_enabled(&self) -> bool {
+        false
+    }
+
+    /// Returns the lazy normalization frequency (0 = normalize only at finalization).
+    #[doc(hidden)]
+    fn lazy_normalization_freq(&self) -> u32 {
+        0
+    }
+
+    /// Returns whether logarithmic encoding (signed magnitude biasing) is enabled for regrets.
+    #[doc(hidden)]
+    fn is_log_encoding_enabled(&self) -> bool {
+        false
+    }
+
+    /// Returns the strategy precision in bits (16, 8, or 4).
+    #[doc(hidden)]
+    fn strategy_bits(&self) -> u8 {
+        16  // Default: same as quantization mode
+    }
 }
 
 /// The trait representing a node in game tree.
@@ -179,6 +209,18 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns strategy as u8 slice (8-bit mixed precision mode).
+    #[doc(hidden)]
+    fn strategy_u8(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns mutable strategy as u8 slice (8-bit mixed precision mode).
+    #[doc(hidden)]
+    fn strategy_u8_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
     /// Returns the compressed cumulative regrets.
     #[doc(hidden)]
     fn regrets_compressed(&self) -> &[i16] {
@@ -224,6 +266,92 @@ pub trait GameNode: Send + Sync {
     /// Returns the mutable reference to the compressed buffer for counterfactual values.
     #[doc(hidden)]
     fn cfvalues_chance_compressed_mut(&mut self) -> &mut [i16] {
+        unreachable!()
+    }
+
+    // 8-bit quantization methods
+    /// Returns the 8-bit quantized strategy.
+    #[doc(hidden)]
+    fn strategy_i8(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized strategy.
+    #[doc(hidden)]
+    fn strategy_i8_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 8-bit quantized cumulative regrets.
+    #[doc(hidden)]
+    fn regrets_i8(&self) -> &[i8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized cumulative regrets.
+    #[doc(hidden)]
+    fn regrets_i8_mut(&mut self) -> &mut [i8] {
+        unreachable!()
+    }
+
+    /// Returns the 8-bit quantized counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_i8(&self) -> &[i8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_i8_mut(&mut self) -> &mut [i8] {
+        unreachable!()
+    }
+
+    /// Returns IP's 8-bit quantized counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_ip_i8(&self) -> &[i8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to IP's 8-bit quantized counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_ip_i8_mut(&mut self) -> &mut [i8] {
+        unreachable!()
+    }
+
+    /// Returns the 8-bit quantized buffer for counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_chance_i8(&self) -> &[i8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized buffer for counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_chance_i8_mut(&mut self) -> &mut [i8] {
+        unreachable!()
+    }
+
+    // 4-bit quantization methods (bit-packed)
+    /// Returns the 4-bit quantized strategy (packed, 2 values per byte).
+    #[doc(hidden)]
+    fn strategy_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit quantized strategy (packed).
+    #[doc(hidden)]
+    fn strategy_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit quantized regrets (packed, 2 values per byte).
+    #[doc(hidden)]
+    fn regrets_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit quantized regrets (packed).
+    #[doc(hidden)]
+    fn regrets_i4_packed_mut(&mut self) -> &mut [u8] {
         unreachable!()
     }
 
@@ -291,5 +419,11 @@ pub trait GameNode: Send + Sync {
     #[doc(hidden)]
     fn enable_parallelization(&self) -> bool {
         false
+    }
+
+    /// Returns the number of elements stored in this node.
+    #[doc(hidden)]
+    fn num_elements(&self) -> usize {
+        self.strategy().len()
     }
 }

@@ -388,7 +388,7 @@ impl PostFlopGame {
 
             // cache the counterfactual values
             let node = self.node();
-            let vec = if self.is_compression_enabled {
+            let vec = if self.is_compression_enabled() {
                 let slice = row(node.cfvalues_compressed(), action, num_hands);
                 let scale = node.cfvalue_scale();
                 decode_signed_slice(slice, scale)
@@ -747,7 +747,7 @@ impl PostFlopGame {
             unsafe { ret.set_len(num_hands) };
             ret
         } else if node.is_chance() && node.cfvalue_storage_player() == Some(player) {
-            if self.is_compression_enabled {
+            if self.is_compression_enabled() {
                 let slice = node.cfvalues_chance_compressed();
                 let scale = node.cfvalue_chance_scale();
                 decode_signed_slice(slice, scale)
@@ -755,7 +755,7 @@ impl PostFlopGame {
                 node.cfvalues_chance().to_vec()
             }
         } else if node.has_cfvalues_ip() && player == PLAYER_IP as usize {
-            if self.is_compression_enabled {
+            if self.is_compression_enabled() {
                 let slice = node.cfvalues_ip_compressed();
                 let scale = node.cfvalue_ip_scale();
                 decode_signed_slice(slice, scale)
@@ -764,7 +764,7 @@ impl PostFlopGame {
             }
         } else if player == self.current_player() {
             have_actions = true;
-            if self.is_compression_enabled {
+            if self.is_compression_enabled() {
                 let slice = node.cfvalues_compressed();
                 let scale = node.cfvalue_scale();
                 decode_signed_slice(slice, scale)
@@ -830,8 +830,11 @@ impl PostFlopGame {
         let num_actions = node.num_actions();
         let num_hands = self.num_private_hands(player);
 
-        let mut ret = if self.is_compression_enabled {
-            normalized_strategy_compressed(node.strategy_compressed(), num_actions)
+        let mut ret = if self.is_compression_enabled() {
+            match self.strategy_bits() {
+                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+            }
         } else {
             normalized_strategy(node.strategy(), num_actions)
         };

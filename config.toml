@@ -1,0 +1,65 @@
+# Postflop Solver Configuration File
+
+[ranges]
+oop = "66+,A8s+,A5s-A4s,AJo+,K9s+,KQo,QTs+,JTs,96s+,85s+,75s+,65s,54s"
+ip = "KK"
+
+[cards]
+flop = "Td9d6h"
+turn = "Qc"
+# river = ""  # Ometti se NOT_DEALT
+
+[tree]
+starting_pot = 200
+effective_stack = 900
+rake_rate = 0.0
+rake_cap = 0.0
+
+# Thresholds (usually keep these defaults)
+add_allin_threshold = 1.5
+force_allin_threshold = 0.15
+merging_threshold = 0.1
+
+# ============================================================================
+# BET SIZES - Separate per ogni street
+# ============================================================================
+# STRATEGIA:
+# - Street PASSATI: Bet sizes ESATTE per replicare la mano reale
+# - Street CORRENTE/FUTURO: Range AMPIO (~13 azioni) per strategia GTO
+#
+# Se lasci vuoto (""), non ci sono bet sizes per quello street
+# ============================================================================
+
+[bet_sizes.flop]
+# Bet sizes al FLOP
+# Preset: "full", "standard", "minimal" oppure sizing custom: "50%, 75%, e, a"
+oop_bet = "standard"
+oop_raise = "standard"
+ip_bet = "standard"
+ip_raise = "standard"
+
+[bet_sizes.turn]
+# Bet sizes al TURN
+oop_bet = "standard"
+oop_raise = "standard"
+ip_bet = "standard"
+ip_raise = "standard"
+
+[bet_sizes.river]
+# Bet sizes al RIVER
+oop_bet = "standard"
+oop_raise = "standard"
+ip_bet = "standard"
+ip_raise = "standard"
+
+[solver]
+max_iterations = 1000
+target_exploitability_pct = 0.5  # 0.5% of the pot
+use_compression = false  # false = 32-bit float, true = 16-bit integer
+zstd_compression_level = 3  # Optional: 1-22 (3=default, 22=max), omit for no compression
+# dry_run = true  # true = mostra solo dimensione tree, false = risolve (default)
+
+[output]
+directory = "solved_games"
+# Output filename pattern: {ip_range}-{board}-{bits}.bin
+# Example: "KK-Td9d6hQc-32.bin"

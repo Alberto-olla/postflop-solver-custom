@@ -106,6 +106,18 @@ impl GameNode for PostFlopNode {
         unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u16, self.num_elements as usize) }
     }
 
+    /// Returns strategy as u8 slice (8-bit mixed precision mode).
+    #[inline]
+    fn strategy_u8(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.storage1 as *const u8, self.num_elements as usize) }
+    }
+
+    /// Returns mutable strategy as u8 slice (8-bit mixed precision mode).
+    #[inline]
+    fn strategy_u8_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u8, self.num_elements as usize) }
+    }
+
     #[inline]
     fn regrets_compressed(&self) -> &[i16] {
         unsafe { slice::from_raw_parts(self.storage2 as *const i16, self.num_elements as usize) }
@@ -146,6 +158,84 @@ impl GameNode for PostFlopNode {
     #[inline]
     fn cfvalues_chance_compressed_mut(&mut self) -> &mut [i16] {
         unsafe { slice::from_raw_parts_mut(self.storage1 as *mut i16, self.num_elements as usize) }
+    }
+
+    // 8-bit quantization methods
+    #[inline]
+    fn strategy_i8(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.storage1 as *const u8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn strategy_i8_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn regrets_i8(&self) -> &[i8] {
+        unsafe { slice::from_raw_parts(self.storage2 as *const i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn regrets_i8_mut(&mut self) -> &mut [i8] {
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn cfvalues_i8(&self) -> &[i8] {
+        unsafe { slice::from_raw_parts(self.storage2 as *const i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn cfvalues_i8_mut(&mut self) -> &mut [i8] {
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn cfvalues_ip_i8(&self) -> &[i8] {
+        unsafe { slice::from_raw_parts(self.storage3 as *const i8, self.num_elements_ip as usize) }
+    }
+
+    #[inline]
+    fn cfvalues_ip_i8_mut(&mut self) -> &mut [i8] {
+        unsafe {
+            slice::from_raw_parts_mut(self.storage3 as *mut i8, self.num_elements_ip as usize)
+        }
+    }
+
+    #[inline]
+    fn cfvalues_chance_i8(&self) -> &[i8] {
+        unsafe { slice::from_raw_parts(self.storage1 as *const i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn cfvalues_chance_i8_mut(&mut self) -> &mut [i8] {
+        unsafe { slice::from_raw_parts_mut(self.storage1 as *mut i8, self.num_elements as usize) }
+    }
+
+    // 4-bit quantization methods (bit-packed, 2 values per byte)
+    #[inline]
+    fn strategy_i4_packed(&self) -> &[u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage1 as *const u8, packed_len) }
+    }
+
+    #[inline]
+    fn strategy_i4_packed_mut(&mut self) -> &mut [u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u8, packed_len) }
+    }
+
+    #[inline]
+    fn regrets_i4_packed(&self) -> &[u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage2 as *const u8, packed_len) }
+    }
+
+    #[inline]
+    fn regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut u8, packed_len) }
     }
 
     #[inline]

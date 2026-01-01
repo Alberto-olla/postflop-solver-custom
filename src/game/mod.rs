@@ -12,12 +12,13 @@ mod tests;
 use crate::action_tree::*;
 use crate::card::*;
 use crate::mutex_like::*;
+use crate::quantization::*;
 use std::collections::BTreeMap;
 
 #[cfg(feature = "bincode")]
 use bincode::{Decode, Encode};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 #[cfg_attr(feature = "bincode", derive(Decode, Encode))]
 enum State {
@@ -27,10 +28,10 @@ enum State {
     TreeBuilt = 2,
     MemoryAllocated = 3,
     Solved = 4,
+    Finalized = 5,  // Solved + memory released (regrets freed)
 }
 
 /// A struct representing a postflop game.
-#[derive(Default)]
 pub struct PostFlopGame {
     // state
     state: State,
@@ -83,7 +84,11 @@ pub struct PostFlopGame {
     storage_mode: BoardState,
     target_storage_mode: BoardState,
     num_nodes: [u64; 3],
-    is_compression_enabled: bool,
+    quantization_mode: QuantizationMode,
+    strategy_bits: u8,  // Mixed precision: strategy precision (16, 8, or 4 bits)
+    lazy_normalization_enabled: bool,
+    lazy_normalization_freq: u32,
+    log_encoding_enabled: bool,  // Signed magnitude biasing for regrets (16-bit only)
     num_storage: u64,
     num_storage_ip: u64,
     num_storage_chance: u64,
