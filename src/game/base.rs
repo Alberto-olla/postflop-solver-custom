@@ -140,6 +140,11 @@ impl Game for PostFlopGame {
     fn strategy_bits(&self) -> u8 {
         self.strategy_bits
     }
+
+    #[inline]
+    fn chance_bits(&self) -> u8 {
+        self.chance_bits
+    }
 }
 
 impl Default for PostFlopGame {
@@ -179,6 +184,7 @@ impl Default for PostFlopGame {
             num_nodes: Default::default(),
             quantization_mode: QuantizationMode::default(),
             strategy_bits: 16,  // Default: 16-bit strategy (same as quantization mode)
+            chance_bits: 16,    // Default: 16-bit chance cfvalues (same as quantization mode)
             lazy_normalization_enabled: bool::default(),
             lazy_normalization_freq: u32::default(),
             log_encoding_enabled: bool::default(),
@@ -434,6 +440,18 @@ impl PostFlopGame {
             mode.bytes_per_element() as u64
         };
 
+        let chance_bytes_per_elem = if mode == QuantizationMode::Int16 {
+            // For 16-bit mode, allow mixed precision for chance cfvalues
+            match self.chance_bits {
+                16 => 2,  // i16
+                8 => 1,   // i8
+                _ => panic!("Invalid chance_bits value"),
+            }
+        } else {
+            // For Float32 mode, ignore chance_bits and use full precision
+            mode.bytes_per_element() as u64
+        };
+
         // Calculate actual storage size for strategy (handle nibble packing)
         let storage1_bytes = if mode == QuantizationMode::Int16 && self.strategy_bits == 4 {
             // For 4-bit nibbles: 2 values per byte, so (num_storage + 1) / 2
@@ -444,7 +462,7 @@ impl PostFlopGame {
 
         if storage1_bytes > isize::MAX as usize
             || regrets_bytes_per_elem * self.num_storage > isize::MAX as u64
-            || regrets_bytes_per_elem * self.num_storage_chance > isize::MAX as u64
+            || chance_bytes_per_elem * self.num_storage_chance > isize::MAX as u64
         {
             panic!("Memory usage exceeds maximum size");
         }
@@ -455,7 +473,7 @@ impl PostFlopGame {
         self.clear_storage();
         let storage2_bytes = (regrets_bytes_per_elem * self.num_storage) as usize;   // Regrets
         let storage_ip_bytes = (regrets_bytes_per_elem * self.num_storage_ip) as usize;
-        let storage_chance_bytes = (regrets_bytes_per_elem * self.num_storage_chance) as usize;
+        let storage_chance_bytes = (chance_bytes_per_elem * self.num_storage_chance) as usize;
 
         self.storage1 = vec![0; storage1_bytes];
         self.storage2 = vec![0; storage2_bytes];
@@ -550,6 +568,38 @@ impl PostFlopGame {
         }
     }
 
+    /// Sets the chance cfvalues precision in bits (mixed precision mode).
+    ///
+    /// Must be called BEFORE allocate_memory_with_mode().
+    /// Only works when quantization_mode is Int16.
+    ///
+    /// Valid values:
+    /// - `16`: Default, uses i16 (same as quantization mode)
+    /// - `8`: Uses i8 (50% less memory for chance cfvalues)
+    ///
+    /// Benefits of 8-bit chance:
+    /// - 50% less memory for chance cfvalues storage
+    /// - Regrets stay at 16-bit (preserves convergence)
+    /// - Useful for large game trees with many chance nodes
+    ///
+    /// # Panics
+    /// Panics if memory has already been allocated or if an invalid value is provided.
+    #[inline]
+    pub fn set_chance_bits(&mut self, bits: u8) {
+        if self.state >= State::MemoryAllocated {
+            panic!("Cannot change chance precision after memory allocation");
+        }
+
+        match bits {
+            16 | 8 => {
+                self.chance_bits = bits;
+            }
+            _ => {
+                panic!("Invalid chance_bits: {}. Valid values: 16, 8", bits);
+            }
+        }
+    }
+
     /// Returns the current memory usage in megabytes.
     ///
     /// This includes all storage arrays (strategy, regrets, cfvalues) but not the node arena.
@@ -560,6 +610,20 @@ impl PostFlopGame {
                   + self.storage_ip.len()
                   + self.storage_chance.len();
         bytes as f64 / 1_048_576.0
+    }
+
+    /// Returns the memory usage breakdown for each storage component in megabytes.
+    ///
+    /// Returns (storage1_mb, storage2_mb, storage_ip_mb, storage_chance_mb).
+    #[inline]
+    pub fn memory_usage_breakdown_mb(&self) -> (f64, f64, f64, f64) {
+        let mb = 1_048_576.0;
+        (
+            self.storage1.len() as f64 / mb,
+            self.storage2.len() as f64 / mb,
+            self.storage_ip.len() as f64 / mb,
+            self.storage_chance.len() as f64 / mb,
+        )
     }
 
     /// Finalizes the solution and releases regrets memory.
@@ -1692,6 +1756,17 @@ impl PostFlopGame {
             regrets_bytes  // Float32 mode: same as regrets
         };
 
+        // Chance bytes may be different in mixed precision mode
+        let chance_bytes = if self.quantization_mode == QuantizationMode::Int16 {
+            match self.chance_bits {
+                16 => 2,  // i16
+                8 => 1,   // i8
+                _ => 2,
+            }
+        } else {
+            regrets_bytes  // Float32 mode: same as regrets
+        };
+
         let is_nibble_mode = self.quantization_mode == QuantizationMode::Int16 && self.strategy_bits == 4;
 
         let mut strategy_counter = 0;
@@ -1708,7 +1783,7 @@ impl PostFlopGame {
                     let ptr = self.storage_chance.as_mut_ptr();
                     node.storage1 = ptr.add(chance_counter);
                 }
-                chance_counter += regrets_bytes * node.num_elements as usize;
+                chance_counter += chance_bytes * node.num_elements as usize;
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;

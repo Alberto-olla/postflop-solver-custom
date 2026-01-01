@@ -163,6 +163,8 @@ impl Encode for PostFlopGame {
         self.quantization_mode.to_compression_flag().encode(encoder)?;
         // Encode strategy_bits for mixed precision support
         self.strategy_bits.encode(encoder)?;
+        // Encode chance_bits for mixed precision support
+        self.chance_bits.encode(encoder)?;
         self.num_storage.encode(encoder)?;
         self.num_storage_ip.encode(encoder)?;
         self.num_storage_chance.encode(encoder)?;
@@ -234,6 +236,8 @@ impl<C> Decode<C> for PostFlopGame {
             },
             // Decode strategy_bits for mixed precision support
             strategy_bits: Decode::decode(decoder)?,
+            // Decode chance_bits for mixed precision support
+            chance_bits: Decode::decode(decoder)?,
             num_storage: Decode::decode(decoder)?,
             num_storage_ip: Decode::decode(decoder)?,
             num_storage_chance: Decode::decode(decoder)?,
@@ -249,9 +253,21 @@ impl<C> Decode<C> for PostFlopGame {
         game.target_storage_mode = game.storage_mode;
         if game.storage_mode == BoardState::River && game.state >= State::MemoryAllocated {
             let num_bytes = game.quantization_mode.bytes_per_element() as u64;
+
+            // Determine chance bytes based on chance_bits
+            let chance_bytes = if game.quantization_mode == QuantizationMode::Int16 {
+                match game.chance_bits {
+                    16 => 2,
+                    8 => 1,
+                    _ => 2,
+                }
+            } else {
+                num_bytes
+            };
+
             game.storage2 = vec![0; (num_bytes * game.num_storage) as usize];
             game.storage_ip = vec![0; (num_bytes * game.num_storage_ip) as usize];
-            game.storage_chance = vec![0; (num_bytes * game.num_storage_chance) as usize];
+            game.storage_chance = vec![0; (chance_bytes * game.num_storage_chance) as usize];
         }
 
         // store base pointers

@@ -102,6 +102,13 @@ struct SolverSettings {
     /// - 4: Future (75% less memory for strategy)
     #[serde(default = "default_strategy_bits")]
     strategy_bits: u8,
+
+    /// Mixed precision: chance cfvalues precision in bits (16 or 8)
+    /// Only works when quantization = "16bit"
+    /// - 16: Default (same precision as quantization mode)
+    /// - 8: Mixed precision (50% less memory for chance cfvalues)
+    #[serde(default = "default_chance_bits")]
+    chance_bits: u8,
 }
 
 impl SolverSettings {
@@ -136,6 +143,7 @@ fn default_force_allin_threshold() -> f64 { 0.01 }  // 1% - permette sizing vici
 fn default_merging_threshold() -> f64 { 0.05 }  // 5% - buon compromesso precisione/performance
 fn default_output_dir() -> String { "solved_games".to_string() }
 fn default_strategy_bits() -> u8 { 16 }  // Default: same precision as quantization mode
+fn default_chance_bits() -> u8 { 16 }  // Default: same precision as quantization mode
 
 /// Definizione dichiarativa di un preset di bet sizing per ogni street
 struct PresetSizing {
@@ -412,6 +420,16 @@ fn main() {
             game.set_strategy_bits(config.solver.strategy_bits);
             println!("Mixed precision: {}-bit strategy (regrets stay 16-bit)",
                      config.solver.strategy_bits);
+        }
+    }
+
+    if config.solver.chance_bits != 16 {
+        if quantization_mode != QuantizationMode::Int16 {
+            eprintln!("Warning: chance_bits only works with quantization='16bit', ignoring");
+        } else {
+            game.set_chance_bits(config.solver.chance_bits);
+            println!("Mixed precision: {}-bit chance cfvalues",
+                     config.solver.chance_bits);
         }
     }
 

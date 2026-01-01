@@ -748,9 +748,21 @@ impl PostFlopGame {
             ret
         } else if node.is_chance() && node.cfvalue_storage_player() == Some(player) {
             if self.is_compression_enabled() {
-                let slice = node.cfvalues_chance_compressed();
-                let scale = node.cfvalue_chance_scale();
-                decode_signed_slice(slice, scale)
+                // Dispatch based on chance_bits precision
+                match self.chance_bits() {
+                    8 => {
+                        // 8-bit mode: use i8
+                        let slice = node.cfvalues_chance_i8();
+                        let scale = node.cfvalue_chance_scale();
+                        decode_signed_i8(slice, scale)
+                    }
+                    _ => {
+                        // 16-bit mode (default): use i16
+                        let slice = node.cfvalues_chance_compressed();
+                        let scale = node.cfvalue_chance_scale();
+                        decode_signed_slice(slice, scale)
+                    }
+                }
             } else {
                 node.cfvalues_chance().to_vec()
             }

@@ -107,6 +107,12 @@ pub trait Game: Send + Sync {
     fn strategy_bits(&self) -> u8 {
         16  // Default: same as quantization mode
     }
+
+    /// Returns the chance cfvalues precision in bits (16 or 8).
+    #[doc(hidden)]
+    fn chance_bits(&self) -> u8 {
+        16  // Default: same as quantization mode
+    }
 }
 
 /// The trait representing a node in game tree.

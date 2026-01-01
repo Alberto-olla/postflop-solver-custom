@@ -86,6 +86,7 @@ pub struct PostFlopGame {
     num_nodes: [u64; 3],
     quantization_mode: QuantizationMode,
     strategy_bits: u8,  // Mixed precision: strategy precision (16, 8, or 4 bits)
+    chance_bits: u8,    // Mixed precision: chance cfvalues precision (16 or 8 bits)
     lazy_normalization_enabled: bool,
     lazy_normalization_freq: u32,
     log_encoding_enabled: bool,  // Signed magnitude biasing for regrets (16-bit only)

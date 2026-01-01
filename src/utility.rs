@@ -315,6 +315,31 @@ pub(crate) fn decode_unsigned_strategy_u8(src: &[u8], scale: f32) -> Vec<f32> {
     src.iter().map(|&x| x as f32 * decoder).collect()
 }
 
+/// Encodes the `f32` slice to the `i8` slice for signed values (e.g., cfvalues_chance), and returns the scale.
+/// Uses signed quantization: maps [-max_abs, max_abs] to [-127, 127].
+/// Note: We use i8::MAX (127) instead of full range to avoid overflow issues.
+#[inline]
+pub(crate) fn encode_signed_i8(dst: &mut [i8], slice: &[f32]) -> f32 {
+    let scale = slice_absolute_max(slice);
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = i8::MAX as f32 / scale_nonzero;  // encoder = 127 / max_abs
+
+    dst.iter_mut()
+        .zip(slice)
+        .for_each(|(d, s)| {
+            *d = unsafe { (s * encoder).round().to_int_unchecked::<i32>() as i8 }
+        });
+
+    scale
+}
+
+/// Decodes the `i8` slice to `f32` for signed values.
+#[inline]
+pub(crate) fn decode_signed_i8(src: &[i8], scale: f32) -> Vec<f32> {
+    let decoder = scale / i8::MAX as f32;
+    src.iter().map(|&x| x as f32 * decoder).collect()
+}
+
 /// Encodes the `f32` slice to 4-bit nibbles (packed in `u8` array) for strategy, and returns the scale.
 /// Uses unsigned quantization with stochastic rounding: maps [0, max] to [0, 15].
 /// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
@@ -604,8 +629,19 @@ fn compute_cfvalue_recursive<T: Game>(
         if save_cfvalues && node.cfvalue_storage_player() == Some(player) {
             let result = unsafe { &*(result as *const _ as *const [f32]) };
             if game.is_compression_enabled() {
-                let cfv_scale = encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
-                node.set_cfvalue_chance_scale(cfv_scale);
+                // Dispatch based on chance_bits precision
+                match game.chance_bits() {
+                    8 => {
+                        // 8-bit mode: use i8
+                        let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result);
+                        node.set_cfvalue_chance_scale(cfv_scale);
+                    }
+                    _ => {
+                        // 16-bit mode (default): use i16
+                        let cfv_scale = encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
+                        node.set_cfvalue_chance_scale(cfv_scale);
+                    }
+                }
             } else {
                 node.cfvalues_chance_mut().copy_from_slice(result);
             }
