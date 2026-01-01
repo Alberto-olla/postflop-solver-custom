@@ -426,7 +426,7 @@ impl PostFlopGame {
             match self.strategy_bits {
                 16 => 2,  // u16
                 8 => 1,   // u8
-                4 => 1,   // Future: nibbles (2 per byte, but allocate per byte)
+                4 => 1,   // nibbles (will be adjusted below for packing)
                 _ => panic!("Invalid strategy_bits value"),
             }
         } else {
@@ -434,7 +434,15 @@ impl PostFlopGame {
             mode.bytes_per_element() as u64
         };
 
-        if strategy_bytes_per_elem * self.num_storage > isize::MAX as u64
+        // Calculate actual storage size for strategy (handle nibble packing)
+        let storage1_bytes = if mode == QuantizationMode::Int16 && self.strategy_bits == 4 {
+            // For 4-bit nibbles: 2 values per byte, so (num_storage + 1) / 2
+            ((self.num_storage + 1) / 2) as usize
+        } else {
+            (strategy_bytes_per_elem * self.num_storage) as usize
+        };
+
+        if storage1_bytes > isize::MAX as usize
             || regrets_bytes_per_elem * self.num_storage > isize::MAX as u64
             || regrets_bytes_per_elem * self.num_storage_chance > isize::MAX as u64
         {
@@ -445,9 +453,6 @@ impl PostFlopGame {
         self.quantization_mode = mode;
 
         self.clear_storage();
-
-        // Separate allocation for strategy and regrets
-        let storage1_bytes = (strategy_bytes_per_elem * self.num_storage) as usize;  // Strategy
         let storage2_bytes = (regrets_bytes_per_elem * self.num_storage) as usize;   // Regrets
         let storage_ip_bytes = (regrets_bytes_per_elem * self.num_storage_ip) as usize;
         let storage_chance_bytes = (regrets_bytes_per_elem * self.num_storage_chance) as usize;
@@ -536,14 +541,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            16 | 8 => {
+            16 | 8 | 4 => {
                 self.strategy_bits = bits;
             }
-            4 => {
-                panic!("4-bit strategy not yet implemented (future feature)");
-            }
             _ => {
-                panic!("Invalid strategy_bits: {}. Valid values: 16, 8 (4 in future)", bits);
+                panic!("Invalid strategy_bits: {}. Valid values: 16, 8, 4", bits);
             }
         }
     }
@@ -1683,12 +1685,14 @@ impl PostFlopGame {
             match self.strategy_bits {
                 16 => 2,  // u16
                 8 => 1,   // u8
-                4 => 1,   // Future: nibbles
+                4 => 1,   // nibbles (will be handled specially below)
                 _ => 2,
             }
         } else {
             regrets_bytes  // Float32 mode: same as regrets
         };
+
+        let is_nibble_mode = self.quantization_mode == QuantizationMode::Int16 && self.strategy_bits == 4;
 
         let mut strategy_counter = 0;
         let mut regrets_counter = 0;
@@ -1718,7 +1722,13 @@ impl PostFlopGame {
                     node.storage2 = ptr2.add(regrets_counter);
                     node.storage3 = ptr3.add(ip_counter);
                 }
-                strategy_counter += strategy_bytes * node.num_elements as usize;
+                // For nibble mode, 2 values per byte
+                let strategy_increment = if is_nibble_mode {
+                    (node.num_elements as usize + 1) / 2
+                } else {
+                    strategy_bytes * node.num_elements as usize
+                };
+                strategy_counter += strategy_increment;
                 regrets_counter += regrets_bytes * node.num_elements as usize;
                 ip_counter += regrets_bytes * node.num_elements_ip as usize;
                 // Initialize scale factors to 1.0 (will be updated on first write)

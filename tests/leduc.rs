@@ -491,3 +491,57 @@ fn leduc_compressed() {
     let expected_ev = -0.0856; // verified by OpenSpiel
     assert!((root_ev - expected_ev).abs() < 2.0 * target);
 }
+
+#[test]
+fn leduc_4bit() {
+    let target = 1e-3;
+    let mut game = LeducGame::new_with_strategy_bits(4);
+    solve(&mut game, 10000, target, false);
+
+    let root = game.root();
+    let num_hands = NUM_PRIVATE_HANDS;
+    let num_actions = 2;
+
+    // Get the 4-bit packed strategy
+    let strategy_packed = root.strategy_i4_packed();
+    let scale = root.strategy_scale();
+
+    // Unpack and normalize the strategy
+    let mut strategy = vec![0.0; num_hands * num_actions];
+    for i in 0..(num_hands * num_actions) {
+        let byte_idx = i / 2;
+        let nibble = if i % 2 == 0 {
+            strategy_packed[byte_idx] & 0x0F
+        } else {
+            (strategy_packed[byte_idx] >> 4) & 0x0F
+        };
+        strategy[i] = (nibble as f32) * scale / 15.0;
+    }
+
+    // Normalize per hand
+    for hand in 0..num_hands {
+        let sum: f32 = (0..num_actions).map(|a| strategy[a * num_hands + hand]).sum();
+        if sum > 0.0 {
+            for action in 0..num_actions {
+                strategy[action * num_hands + hand] /= sum;
+            }
+        } else {
+            for action in 0..num_actions {
+                strategy[action * num_hands + hand] = 1.0 / num_actions as f32;
+            }
+        }
+    }
+
+    // Compute expected value
+    let ev_decoder = root.cfvalue_scale() / i16::MAX as f32;
+    let root_ev = root
+        .cfvalues_compressed()
+        .iter()
+        .enumerate()
+        .fold(0.0, |acc, (i, &raw_ev)| {
+            acc + ev_decoder * raw_ev as f32 * strategy[i]
+        });
+
+    let expected_ev = -0.0856; // verified by OpenSpiel
+    assert!((root_ev - expected_ev).abs() < 2.0 * target);
+}

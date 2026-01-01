@@ -833,6 +833,7 @@ impl PostFlopGame {
         let mut ret = if self.is_compression_enabled() {
             match self.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             }
         } else {

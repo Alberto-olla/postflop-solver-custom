@@ -315,6 +315,80 @@ pub(crate) fn decode_unsigned_strategy_u8(src: &[u8], scale: f32) -> Vec<f32> {
     src.iter().map(|&x| x as f32 * decoder).collect()
 }
 
+/// Encodes the `f32` slice to 4-bit nibbles (packed in `u8` array) for strategy, and returns the scale.
+/// Uses unsigned quantization with stochastic rounding: maps [0, max] to [0, 15].
+/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
+///
+/// Stochastic rounding prevents the "vanishing update" problem when accumulating
+/// strategies over many iterations.
+#[inline]
+pub(crate) fn encode_unsigned_strategy_u4(dst: &mut [u8], slice: &[f32]) -> f32 {
+    use rand::Rng;
+
+    let scale = slice_nonnegative_max(slice);
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = 15.0 / scale_nonzero;  // 4-bit max value is 15
+
+    // Use thread-local RNG for performance
+    let mut rng = rand::thread_rng();
+
+    // Process in pairs to avoid read-modify-write on the same byte
+    let chunks = slice.chunks(2);
+    for (byte_idx, chunk) in chunks.enumerate() {
+        // Element 0 (Low Nibble)
+        let val0 = chunk[0] * encoder;
+        let int0 = val0.floor();
+        let q0 = if rng.gen::<f32>() < (val0 - int0) {
+            (int0 + 1.0).min(15.0)
+        } else {
+            int0
+        };
+        let nibble0 = unsafe { q0.to_int_unchecked::<u8>() };
+
+        // Element 1 (High Nibble) - if exists
+        let nibble1 = if let Some(&val1) = chunk.get(1) {
+            let val1 = val1 * encoder;
+            let int1 = val1.floor();
+            let q1 = if rng.gen::<f32>() < (val1 - int1) {
+                (int1 + 1.0).min(15.0)
+            } else {
+                int1
+            };
+            unsafe { q1.to_int_unchecked::<u8>() }
+        } else {
+            0  // Padding for last element if odd
+        };
+
+        // Clean write: overwrites entire byte
+        // (Resolves potential dirty memory issues)
+        dst[byte_idx] = (nibble1 << 4) | (nibble0 & 0x0F);
+    }
+
+    scale
+}
+
+/// Decodes 4-bit nibbles (packed in `u8` array) to `f32` for strategy.
+/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
+#[inline]
+pub(crate) fn decode_unsigned_strategy_u4(src: &[u8], num_elements: usize, scale: f32) -> Vec<f32> {
+    let decoder = scale / 15.0;  // 4-bit max value is 15
+    let mut result = Vec::with_capacity(num_elements);
+
+    for i in 0..num_elements {
+        let byte_idx = i / 2;
+        let nibble = if i % 2 == 0 {
+            // Low nibble (even index)
+            src[byte_idx] & 0x0F
+        } else {
+            // High nibble (odd index)
+            (src[byte_idx] >> 4) & 0x0F
+        };
+        result.push(nibble as f32 * decoder);
+    }
+
+    result
+}
+
 /// Applies the given swap to the given slice.
 #[inline]
 pub(crate) fn apply_swap<T>(slice: &mut [T], swap_list: &[(u16, u16)]) {
@@ -556,6 +630,7 @@ fn compute_cfvalue_recursive<T: Game>(
         let mut strategy = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -565,6 +640,7 @@ fn compute_cfvalue_recursive<T: Game>(
         let mut strategy = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -603,10 +679,14 @@ fn compute_cfvalue_recursive<T: Game>(
         );
     } else {
         // obtain the strategy
+        // Note: for 4-bit mode, we need the number of hands for the node's player (opponent), not the current player
+        let node_num_hands = game.num_private_hands(node.player());
+
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -616,6 +696,7 @@ fn compute_cfvalue_recursive<T: Game>(
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -778,10 +859,14 @@ fn compute_best_cfv_recursive<T: Game>(
     // opponent node
     else {
         // obtain the strategy
+        // Note: for 4-bit mode, we need the number of hands for the node's player (opponent), not the current player
+        let node_num_hands = game.num_private_hands(node.player());
+
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -791,6 +876,7 @@ fn compute_best_cfv_recursive<T: Game>(
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
                 8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
                 _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             }
         } else {
@@ -935,6 +1021,38 @@ pub(crate) fn normalized_strategy_u8(strategy: &[u8], num_actions: usize) -> Vec
     unsafe { normalized.set_len(strategy.len()) };
 
     let row_size = strategy.len() / num_actions;
+    let mut denom = Vec::with_capacity(row_size);
+    sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
+    unsafe { denom.set_len(row_size) };
+
+    let default = 1.0 / num_actions as f32;
+    normalized.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    normalized
+}
+
+/// Computes normalized strategy from 4-bit nibble packed values (4-bit mixed precision).
+/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
+#[inline]
+pub(crate) fn normalized_strategy_u4(strategy_packed: &[u8], num_elements: usize, num_actions: usize) -> Vec<f32> {
+    let mut normalized = Vec::with_capacity(num_elements);
+
+    // Unpack nibbles to f32
+    for i in 0..num_elements {
+        let byte_idx = i / 2;
+        let nibble = if i % 2 == 0 {
+            // Low nibble (even index)
+            strategy_packed[byte_idx] & 0x0F
+        } else {
+            // High nibble (odd index)
+            (strategy_packed[byte_idx] >> 4) & 0x0F
+        };
+        normalized.push(nibble as f32);
+    }
+
+    let row_size = num_elements / num_actions;
     let mut denom = Vec::with_capacity(row_size);
     sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
     unsafe { denom.set_len(row_size) };

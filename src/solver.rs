@@ -299,7 +299,33 @@ fn solve_recursive<T: Game>(
                     node.set_strategy_scale(new_scale);
                 }
                 (QuantizationMode::Int16, 4) => {
-                    panic!("4-bit strategy not yet implemented");
+                    // 4-bit strategy mode (nibble packing)
+                    let scale = node.strategy_scale();
+                    let decoder = params.gamma_t * scale / 15.0;  // 4-bit max value is 15
+                    let cum_strategy_u4 = node.strategy_i4_packed_mut();
+                    let num_elements = strategy.len();
+
+                    // Decode nibbles and accumulate
+                    for i in 0..num_elements {
+                        let byte_idx = i / 2;
+                        let nibble = if i % 2 == 0 {
+                            cum_strategy_u4[byte_idx] & 0x0F
+                        } else {
+                            (cum_strategy_u4[byte_idx] >> 4) & 0x0F
+                        };
+                        strategy[i] += (nibble as f32) * decoder;
+                    }
+
+                    if !locking.is_empty() {
+                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                            if s.is_sign_positive() {
+                                *d = 0.0;
+                            }
+                        })
+                    }
+
+                    let new_scale = encode_unsigned_strategy_u4(cum_strategy_u4, &strategy);
+                    node.set_strategy_scale(new_scale);
                 }
                 _ => {
                     panic!("Invalid quantization/strategy_bits combination");

@@ -72,16 +72,23 @@ impl PostFlopGame {
             match self.strategy_bits {
                 16 => 2,  // u16
                 8 => 1,   // u8
-                4 => 1,   // Future: nibbles
+                4 => 1,   // nibbles (will be handled specially below)
                 _ => 2,
             }
         } else {
             regrets_bytes  // Float32 mode: same as regrets
         };
 
+        let is_nibble_mode = self.quantization_mode == QuantizationMode::Int16 && self.strategy_bits == 4;
+
         if self.target_storage_mode == BoardState::River {
             // omit storing the counterfactual values
-            return [strategy_bytes * self.num_storage as usize, 0, 0, 0];
+            let storage1_size = if is_nibble_mode {
+                (self.num_storage as usize + 1) / 2
+            } else {
+                strategy_bytes * self.num_storage as usize
+            };
+            return [storage1_size, 0, 0, 0];
         }
 
         let mut node_index = match self.target_storage_mode {
@@ -98,7 +105,14 @@ impl PostFlopGame {
                 let offset_strategy = unsafe { node.storage1.offset_from(self.storage1.as_ptr()) };
                 let offset_regrets = unsafe { node.storage2.offset_from(self.storage2.as_ptr()) };
                 let offset_ip = unsafe { node.storage3.offset_from(self.storage_ip.as_ptr()) };
-                let len_strategy = strategy_bytes * node.num_elements as usize;
+
+                // For 4-bit mode, calculate packed length
+                let len_strategy = if is_nibble_mode {
+                    (node.num_elements as usize + 1) / 2
+                } else {
+                    strategy_bytes * node.num_elements as usize
+                };
+
                 let len_regrets = regrets_bytes * node.num_elements as usize;
                 let len_ip = regrets_bytes * node.num_elements_ip as usize;
                 num_storage[0] = offset_strategy as usize + len_strategy;
