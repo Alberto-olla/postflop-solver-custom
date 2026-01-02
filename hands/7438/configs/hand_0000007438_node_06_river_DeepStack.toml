@@ -46,11 +46,13 @@ ip_bet = "5400c"
 ip_raise = "full"
 
 [solver]
-max_iterations = 10000
-target_exploitability_pct = 0.1
+max_iterations = 1000
+target_exploitability_pct = 0.05
+quantization = "16bit"
+algorithm = "dcfr+"
 use_compression = false
-zstd_compression_level = 3
-dry_run = true
+zstd_compression_level = 0
+dry_run = false
 
 [output]
 directory = "hands/7438/solved_games"

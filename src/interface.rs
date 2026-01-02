@@ -113,6 +113,12 @@ pub trait Game: Send + Sync {
     fn chance_bits(&self) -> u8 {
         16  // Default: same as quantization mode
     }
+
+    /// Returns the CFR algorithm variant.
+    #[doc(hidden)]
+    fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
+        crate::solver::CfrAlgorithm::DCFR
+    }
 }
 
 /// The trait representing a node in game tree.

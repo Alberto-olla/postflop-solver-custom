@@ -145,6 +145,11 @@ impl Game for PostFlopGame {
     fn chance_bits(&self) -> u8 {
         self.chance_bits
     }
+
+    #[inline]
+    fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
+        self.cfr_algorithm
+    }
 }
 
 impl Default for PostFlopGame {
@@ -188,6 +193,7 @@ impl Default for PostFlopGame {
             lazy_normalization_enabled: bool::default(),
             lazy_normalization_freq: u32::default(),
             log_encoding_enabled: bool::default(),
+            cfr_algorithm: crate::solver::CfrAlgorithm::default(),
             num_storage: u64::default(),
             num_storage_ip: u64::default(),
             num_storage_chance: u64::default(),
@@ -533,6 +539,30 @@ impl PostFlopGame {
             panic!("Cannot change log encoding after memory allocation");
         }
         self.log_encoding_enabled = enabled;
+    }
+
+    /// Sets the CFR algorithm variant (DCFR or DCFR+).
+    ///
+    /// Must be called BEFORE allocate_memory_with_mode().
+    ///
+    /// # Algorithm Variants
+    /// - DCFR: Original with separate α and β discount factors
+    /// - DCFR+: Uses single α factor with regret clipping (recommended: α=1.5, γ=4)
+    ///
+    /// # Panics
+    /// Panics if memory has already been allocated.
+    #[inline]
+    pub fn set_cfr_algorithm(&mut self, algorithm: crate::solver::CfrAlgorithm) {
+        if self.state >= State::MemoryAllocated {
+            panic!("Cannot change CFR algorithm after memory allocation");
+        }
+        self.cfr_algorithm = algorithm;
+    }
+
+    /// Gets the current CFR algorithm variant.
+    #[inline]
+    pub fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
+        self.cfr_algorithm
     }
 
     /// Sets the strategy precision in bits (mixed precision mode).

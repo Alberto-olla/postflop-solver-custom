@@ -46,11 +46,12 @@ ip_bet = "full"
 ip_raise = "full"
 
 [solver]
-max_iterations = 2500
-target_exploitability_pct = 0.1
+max_iterations = 25000
+target_exploitability_pct = 0.5
 quantization = "16bit"
-strategy_bits = 8
-chance_bits = 8
+algorithm = "dcfr"
+#strategy_bits = 8
+#chance_bits = 8
 zstd_compression_level = 0
 dry_run = false
 #lazy_normalization = true

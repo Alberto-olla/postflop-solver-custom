@@ -109,6 +109,16 @@ struct SolverSettings {
     /// - 8: Mixed precision (50% less memory for chance cfvalues)
     #[serde(default = "default_chance_bits")]
     chance_bits: u8,
+
+    /// CFR algorithm variant: "dcfr" or "dcfr+"
+    /// - "dcfr": Original Discounted CFR (uses separate α and β discount factors)
+    /// - "dcfr+": DCFR+ (uses single α discount factor with regret clipping)
+    ///
+    /// Recommended parameters for DCFR+: α=1.5, γ=4 (same as DCFR)
+    ///
+    /// If not specified, defaults to "dcfr" for backward compatibility.
+    #[serde(default = "default_algorithm")]
+    algorithm: String,
 }
 
 impl SolverSettings {
@@ -129,6 +139,18 @@ impl SolverSettings {
             Ok(QuantizationMode::from_compression_flag(self.use_compression))
         }
     }
+
+    /// Get the CFR algorithm variant.
+    fn get_algorithm(&self) -> Result<postflop_solver::CfrAlgorithm, String> {
+        match self.algorithm.to_lowercase().as_str() {
+            "dcfr" => Ok(postflop_solver::CfrAlgorithm::DCFR),
+            "dcfr+" | "dcrfplus" => Ok(postflop_solver::CfrAlgorithm::DCRFPlus),
+            _ => Err(format!(
+                "Invalid algorithm: '{}'. Valid options: dcfr, dcfr+",
+                self.algorithm
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +166,7 @@ fn default_merging_threshold() -> f64 { 0.05 }  // 5% - buon compromesso precisi
 fn default_output_dir() -> String { "solved_games".to_string() }
 fn default_strategy_bits() -> u8 { 16 }  // Default: same precision as quantization mode
 fn default_chance_bits() -> u8 { 16 }  // Default: same precision as quantization mode
+fn default_algorithm() -> String { "dcfr".to_string() }  // Default: DCFR for backward compatibility
 
 /// Definizione dichiarativa di un preset di bet sizing per ogni street
 struct PresetSizing {
@@ -432,6 +455,16 @@ fn main() {
                      config.solver.chance_bits);
         }
     }
+
+    // Configure CFR algorithm variant
+    let algorithm = config.solver.get_algorithm()
+        .expect("Invalid algorithm configuration");
+    game.set_cfr_algorithm(algorithm);
+    let algorithm_name = match algorithm {
+        postflop_solver::CfrAlgorithm::DCFR => "DCFR (dual discount factors)",
+        postflop_solver::CfrAlgorithm::DCRFPlus => "DCFR+ (single discount + clipping)",
+    };
+    println!("Using algorithm: {}", algorithm_name);
 
     // Allocate memory
     game.allocate_memory_with_mode(quantization_mode);

@@ -9,30 +9,76 @@ use std::mem::MaybeUninit;
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CfrAlgorithm {
+    DCFR,
+    DCRFPlus,
+}
+
+impl Default for CfrAlgorithm {
+    fn default() -> Self {
+        Self::DCFR
+    }
+}
+
 struct DiscountParams {
     alpha_t: f32,
     beta_t: f32,
     gamma_t: f32,
+    algorithm: CfrAlgorithm,
 }
 
 impl DiscountParams {
-    pub fn new(current_iteration: u32) -> Self {
+    pub fn new(current_iteration: u32, algorithm: CfrAlgorithm) -> Self {
+        match algorithm {
+            CfrAlgorithm::DCFR => Self::new_dcfr(current_iteration),
+            CfrAlgorithm::DCRFPlus => Self::new_dcfr_plus(current_iteration),
+        }
+    }
+
+    fn new_dcfr(current_iteration: u32) -> Self {
+        // DCFR: Uses (t-1) for alpha discounting (REVERTED - testing opposite)
         // 0, 1, 4, 16, 64, 256, ...
         let nearest_lower_power_of_4 = match current_iteration {
             0 => 0,
             x => 1 << ((x.leading_zeros() ^ 31) & !1),
         };
 
+        // Testing: use (t-1) for DCFR
         let t_alpha = (current_iteration as i32 - 1).max(0) as f64;
         let t_gamma = (current_iteration - nearest_lower_power_of_4) as f64;
 
-        let pow_alpha = t_alpha * t_alpha.sqrt();
+        let pow_alpha = t_alpha * t_alpha.sqrt();  // (t-1)^1.5
         let pow_gamma = (t_gamma / (t_gamma + 1.0)).powi(3);
 
         Self {
             alpha_t: (pow_alpha / (pow_alpha + 1.0)) as f32,
             beta_t: 0.5,
             gamma_t: pow_gamma as f32,
+            algorithm: CfrAlgorithm::DCFR,
+        }
+    }
+
+    fn new_dcfr_plus(current_iteration: u32) -> Self {
+        // DCFR+: Using (t-1) as per the paper
+        // 0, 1, 4, 16, 64, 256, ...
+        let nearest_lower_power_of_4 = match current_iteration {
+            0 => 0,
+            x => 1 << ((x.leading_zeros() ^ 31) & !1),
+        };
+
+        // Use (t-1) for DCFR+ as specified in the paper
+        let t_alpha = (current_iteration as i32 - 1).max(0) as f64;
+        let t_gamma = (current_iteration - nearest_lower_power_of_4) as f64;
+
+        let pow_alpha = t_alpha * t_alpha.sqrt();  // (t-1)^1.5
+        let pow_gamma = (t_gamma / (t_gamma + 1.0)).powi(4);  // Using gamma=4 as recommended
+
+        Self {
+            alpha_t: (pow_alpha / (pow_alpha + 1.0)) as f32,
+            beta_t: 0.5,  // Not used in DCFR+
+            gamma_t: pow_gamma as f32,
+            algorithm: CfrAlgorithm::DCRFPlus,
         }
     }
 }
@@ -66,10 +112,14 @@ pub fn solve<T: Game>(
 
     for t in 0..max_num_iterations {
         if exploitability <= target_exploitability {
+            if print_progress {
+                eprintln!("\n[STOP] Reached target exploitability at iteration {}", t);
+                eprintln!("       Current: {:.6}, Target: {:.6}", exploitability, target_exploitability);
+            }
             break;
         }
 
-        let params = DiscountParams::new(t);
+        let params = DiscountParams::new(t, game.cfr_algorithm());
 
         // alternating updates
         for player in 0..2 {
@@ -84,11 +134,15 @@ pub fn solve<T: Game>(
             );
         }
 
-        if (t + 1) % 10 == 0 || t + 1 == max_num_iterations {
-            exploitability = compute_exploitability(game);
-        }
+        // Calculate exploitability every iteration for accurate stopping
+        exploitability = compute_exploitability(game);
 
         if print_progress {
+            // Show last 20 iterations in detail
+            if t >= max_num_iterations.saturating_sub(20) || exploitability <= target_exploitability * 1.5 {
+                eprintln!("iter {}: expl={:.6}, target={:.6}, diff={:.6}",
+                         t + 1, exploitability, target_exploitability, exploitability - target_exploitability);
+            }
             print!("\riteration: {} / {} ", t + 1, max_num_iterations);
             print!("(exploitability = {exploitability:.4e})");
             io::stdout().flush().unwrap();
@@ -117,7 +171,7 @@ pub fn solve_step<T: Game>(game: &T, current_iteration: u32) {
     }
 
     let mut root = game.root();
-    let params = DiscountParams::new(current_iteration);
+    let params = DiscountParams::new(current_iteration, game.cfr_algorithm());
 
     // alternating updates
     for player in 0..2 {
@@ -239,7 +293,11 @@ fn solve_recursive<T: Game>(
 
         // compute the strategy by regret-maching algorithm
         let mut strategy = if game.is_compression_enabled() {
-            regret_matching_compressed(node.regrets_compressed(), num_actions)
+            if params.algorithm == CfrAlgorithm::DCRFPlus {
+                regret_matching_compressed_unsigned(node.regrets_compressed(), num_actions)
+            } else {
+                regret_matching_compressed(node.regrets_compressed(), num_actions)
+            }
         } else {
             regret_matching(node.regrets(), num_actions)
         };
@@ -334,13 +392,26 @@ fn solve_recursive<T: Game>(
 
             // update the cumulative regret
             let scale = node.regret_scale();
-            let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
-            let beta_decoder = params.beta_t * scale / i16::MAX as f32;
             let cum_regret = node.regrets_compressed_mut();
 
-            cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                *x += *y as f32 * if *y >= 0 { alpha_decoder } else { beta_decoder };
-            });
+            match params.algorithm {
+                CfrAlgorithm::DCFR => {
+                    // DCFR: conditional discounting based on sign
+                    let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
+                    let beta_decoder = params.beta_t * scale / i16::MAX as f32;
+                    cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                        *x += *y as f32 * if *y >= 0 { alpha_decoder } else { beta_decoder };
+                    });
+                }
+                CfrAlgorithm::DCRFPlus => {
+                    // DCFR+: decode as unsigned (regrets are always >= 0 after clipping)
+                    let alpha_decoder = params.alpha_t * scale / u16::MAX as f32;
+                    cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                        // Reinterpret i16 as u16 to get unsigned value
+                        *x += (*y as u16) as f32 * alpha_decoder;
+                    });
+                }
+            }
 
             cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
                 sub_slice(row, result);
@@ -354,7 +425,21 @@ fn solve_recursive<T: Game>(
                 })
             }
 
-            let new_scale = encode_signed_slice(cum_regret, &cfv_actions);
+            // DCFR+: Clip negative regrets to zero after computing instantaneous regret
+            if params.algorithm == CfrAlgorithm::DCRFPlus {
+                cfv_actions.iter_mut().for_each(|x| {
+                    if *x < 0.0 {
+                        *x = 0.0;
+                    }
+                });
+            }
+
+            // Use unsigned encoding for DCFR+ (2x precision since regrets are >= 0)
+            let new_scale = if params.algorithm == CfrAlgorithm::DCRFPlus {
+                encode_unsigned_as_i16(cum_regret, &cfv_actions)
+            } else {
+                encode_signed_slice(cum_regret, &cfv_actions)
+            };
             node.set_regret_scale(new_scale);
         } else {
             // update the cumulative strategy
@@ -365,22 +450,48 @@ fn solve_recursive<T: Game>(
             });
 
             // update the cumulative regret
-            let (alpha, beta) = (params.alpha_t, params.beta_t);
             let cum_regret = node.regrets_mut();
-            cum_regret.iter_mut().zip(&*cfv_actions).for_each(|(x, y)| {
-                let coef = if x.is_sign_positive() { alpha } else { beta };
-                *x = *x * coef + *y;
-            });
-            cum_regret.chunks_exact_mut(num_hands).for_each(|row| {
-                sub_slice(row, result);
-            });
+            match params.algorithm {
+                CfrAlgorithm::DCFR => {
+                    // DCFR: conditional discounting based on sign
+                    let (alpha, beta) = (params.alpha_t, params.beta_t);
+                    cum_regret.iter_mut().zip(&*cfv_actions).for_each(|(x, y)| {
+                        let coef = if x.is_sign_positive() { alpha } else { beta };
+                        *x = *x * coef + *y;
+                    });
+                    cum_regret.chunks_exact_mut(num_hands).for_each(|row| {
+                        sub_slice(row, result);
+                    });
+                }
+                CfrAlgorithm::DCRFPlus => {
+                    // DCFR+: discount, then add instantaneous regret, then clip
+                    // Must compute instantaneous regret BEFORE clipping (like compressed path)
+                    let alpha = params.alpha_t;
+                    cum_regret.iter_mut().zip(&*cfv_actions).for_each(|(x, y)| {
+                        *x = *x * alpha + *y;
+                    });
+                    cum_regret.chunks_exact_mut(num_hands).for_each(|row| {
+                        sub_slice(row, result);
+                    });
+                    // Clip after computing instantaneous regret
+                    cum_regret.iter_mut().for_each(|x| {
+                        if *x < 0.0 {
+                            *x = 0.0;
+                        }
+                    });
+                }
+            }
         }
     }
     // if the current player is not `player`
     else {
         // compute the strategy by regret-matching algorithm
         let mut cfreach_actions = if game.is_compression_enabled() {
-            regret_matching_compressed(node.regrets_compressed(), num_actions)
+            if params.algorithm == CfrAlgorithm::DCRFPlus {
+                regret_matching_compressed_unsigned(node.regrets_compressed(), num_actions)
+            } else {
+                regret_matching_compressed(node.regrets_compressed(), num_actions)
+            }
         } else {
             regret_matching(node.regrets(), num_actions)
         };
@@ -488,6 +599,50 @@ fn regret_matching_compressed(regret: &[i16], num_actions: usize) -> Vec<f32, St
 fn regret_matching_compressed(regret: &[i16], num_actions: usize) -> Vec<f32> {
     let mut strategy = Vec::with_capacity(regret.len());
     strategy.extend(regret.iter().map(|&r| r.max(0) as f32));
+
+    let row_size = strategy.len() / num_actions;
+    let mut denom = Vec::with_capacity(row_size);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(row_size) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+/// Computes the strategy by regret-matching for DCFR+ (unsigned interpretation).
+/// DCFR+ stores unsigned values [0, 65535] as i16, so we need to reinterpret them.
+#[cfg(feature = "custom-alloc")]
+#[inline]
+fn regret_matching_compressed_unsigned(regret: &[i16], num_actions: usize) -> Vec<f32, StackAlloc> {
+    let mut strategy = Vec::with_capacity_in(regret.len(), StackAlloc);
+    // Reinterpret i16 as u16 for DCFR+ (regrets are always >= 0 after clipping)
+    strategy.extend(regret.iter().map(|&r| (r as u16) as f32));
+
+    let row_size = strategy.len() / num_actions;
+    let mut denom = Vec::with_capacity_in(row_size, StackAlloc);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(row_size) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+/// Computes the strategy by regret-matching for DCFR+ (unsigned interpretation).
+/// DCFR+ stores unsigned values [0, 65535] as i16, so we need to reinterpret them.
+#[cfg(not(feature = "custom-alloc"))]
+#[inline]
+fn regret_matching_compressed_unsigned(regret: &[i16], num_actions: usize) -> Vec<f32> {
+    let mut strategy = Vec::with_capacity(regret.len());
+    // Reinterpret i16 as u16 for DCFR+ (regrets are always >= 0 after clipping)
+    strategy.extend(regret.iter().map(|&r| (r as u16) as f32));
 
     let row_size = strategy.len() / num_actions;
     let mut denom = Vec::with_capacity(row_size);

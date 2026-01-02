@@ -227,6 +227,21 @@ pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
     scale
 }
 
+/// Encodes the `f32` slice as unsigned values into an `i16` slice (for DCFR+ regrets after clipping).
+/// This provides 2x precision compared to signed encoding when all values are >= 0.
+/// Returns the scale factor used.
+#[inline]
+pub(crate) fn encode_unsigned_as_i16(dst: &mut [i16], slice: &[f32]) -> f32 {
+    let scale = slice_nonnegative_max(slice);
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = u16::MAX as f32 / scale_nonzero;
+    dst.iter_mut().zip(slice).for_each(|(d, s)| {
+        let val = unsafe { (s * encoder + 0.49999997).to_int_unchecked::<u32>() as u16 };
+        *d = val as i16;  // Reinterpret u16 as i16 (same bit pattern)
+    });
+    scale
+}
+
 /// Encodes the `f32` slice to the `i16` slice using logarithmic compression (signed magnitude biasing).
 /// This compresses the dynamic range, allowing better precision for both small and large values.
 /// Formula: compressed = sign(x) * log1p(abs(x))
