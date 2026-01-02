@@ -69,13 +69,22 @@ pub enum QuantizationMode {
     ///
     /// This mode stores values directly as 32-bit floats without any quantization.
     /// It provides the highest precision but uses the most memory.
+    #[cfg_attr(feature = "serde", serde(rename = "32bit"))]
     Float32,
 
     /// Compressed precision: 16-bit signed integer (i16).
     ///
     /// This mode stores values as 16-bit integers with a floating-point scale factor.
     /// It reduces memory usage by 50% compared to Float32 with minimal precision loss.
+    #[cfg_attr(feature = "serde", serde(rename = "16bit"))]
     Int16,
+
+    /// Logarithmic compressed precision: 16-bit signed integer (i16).
+    ///
+    /// This mode stores values as `sign * log(1 + |x|)` in 16-bit integers.
+    /// Ideally suited for values with high dynamic range (like CFR+ regrets).
+    #[cfg_attr(feature = "serde", serde(rename = "16bit-log"))]
+    Int16Log,
 }
 
 impl Default for QuantizationMode {
@@ -91,7 +100,7 @@ impl QuantizationMode {
     pub fn bytes_per_element(&self) -> usize {
         match self {
             Self::Float32 => 4,
-            Self::Int16 => 2,
+            Self::Int16 | Self::Int16Log => 2,
         }
     }
 
@@ -100,7 +109,7 @@ impl QuantizationMode {
     pub fn storage_size(&self, num_elements: usize) -> usize {
         match self {
             Self::Float32 => num_elements * 4,
-            Self::Int16 => num_elements * 2,
+            Self::Int16 | Self::Int16Log => num_elements * 2,
         }
     }
 

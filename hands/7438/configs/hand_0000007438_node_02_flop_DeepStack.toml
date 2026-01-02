@@ -48,8 +48,10 @@ ip_raise = "minimal"
 [solver]
 max_iterations = 1000
 target_exploitability_pct = 0.5
-use_compression = false
+quantization = "16bit-log"
+algorithm = "dcfr+"
 zstd_compression_level = 3
+dry_run = false
 
 [output]
 directory = "hands/7438/solved_games"

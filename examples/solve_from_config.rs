@@ -129,8 +129,9 @@ impl SolverSettings {
             match quant_str.to_lowercase().as_str() {
                 "32bit" | "float32" | "f32" => Ok(QuantizationMode::Float32),
                 "16bit" | "int16" | "i16" => Ok(QuantizationMode::Int16),
+                "16bit-log" | "int16-log" | "i16-log" => Ok(QuantizationMode::Int16Log),
                 _ => Err(format!(
-                    "Invalid quantization mode: '{}'. Valid options: 32bit, 16bit",
+                    "Invalid quantization mode: '{}'. Valid options: 32bit, 16bit, 16bit-log",
                     quant_str
                 )),
             }
@@ -470,7 +471,7 @@ fn main() {
     game.allocate_memory_with_mode(quantization_mode);
     let bits = match quantization_mode {
         QuantizationMode::Float32 => 32,
-        QuantizationMode::Int16 => 16,
+        QuantizationMode::Int16 | QuantizationMode::Int16Log => 16,
     };
     println!("Using {}-bit precision ({})", bits,
         if quantization_mode.is_compressed() { "compressed" } else { "full precision" });

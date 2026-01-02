@@ -46,10 +46,10 @@ ip_bet = "full"
 ip_raise = "full"
 
 [solver]
-max_iterations = 25000
+max_iterations = 2500
 target_exploitability_pct = 0.5
-quantization = "16bit"
-algorithm = "dcfr"
+quantization = "16bit-log"
+algorithm = "dcfr+"
 #strategy_bits = 8
 #chance_bits = 8
 zstd_compression_level = 0
