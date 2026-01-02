@@ -103,7 +103,9 @@ pub struct PostFlopGame {
     storage1: Vec<u8>,
     storage2: Vec<u8>,
     storage_ip: Vec<u8>,
+
     storage_chance: Vec<u8>,
+    storage4: Vec<u8>, // For SAPCFR+ (Previous Instantaneous Regret)
     locking_strategy: BTreeMap<usize, Vec<f32>>,
 
     // result interpreter
@@ -139,10 +141,14 @@ pub struct PostFlopNode {
     num_elements: u32,
     scale1: f32,
     scale2: f32,
+
     scale3: f32,
+    scale4: f32,
     storage1: *mut u8, // strategy
+
     storage2: *mut u8, // regrets or cfvalues
     storage3: *mut u8, // IP cfvalues
+    storage4: *mut u8, // SAPCFR+ prev regrets
 }
 
 unsafe impl Send for PostFlopNode {}

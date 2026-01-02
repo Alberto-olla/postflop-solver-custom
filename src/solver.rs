@@ -9,10 +9,28 @@ use std::mem::MaybeUninit;
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
 
+// Import nuovi moduli trait-based
+use crate::cfr_algorithms::{CfrAlgorithmTrait, DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfrAlgorithm {
     DCFR,
     DCRFPlus,
+    SAPCFRPlus,
+}
+
+impl CfrAlgorithm {
+    /// Indica se l'algoritmo richiede storage4 (previous instantaneous regrets)
+    ///
+    /// Usa i trait da cfr_algorithms per determinare i requisiti di storage.
+    #[inline]
+    pub fn requires_storage4(&self) -> bool {
+        match self {
+            Self::DCFR => DcfrAlgorithm.requires_storage4(),
+            Self::DCRFPlus => DcfrPlusAlgorithm.requires_storage4(),
+            Self::SAPCFRPlus => SapcfrPlusAlgorithm.requires_storage4(),
+        }
+    }
 }
 
 impl Default for CfrAlgorithm {
@@ -30,65 +48,22 @@ struct DiscountParams {
 
 impl DiscountParams {
     pub fn new(current_iteration: u32, algorithm: CfrAlgorithm) -> Self {
-        match algorithm {
-            CfrAlgorithm::DCFR => Self::new_dcfr(current_iteration),
-            CfrAlgorithm::DCRFPlus => Self::new_dcfr_plus(current_iteration),
-        }
-    }
-
-    fn new_dcfr(current_iteration: u32) -> Self {
-        // DCFR: Uses (t-1) for alpha discounting (REVERTED - testing opposite)
-        // 0, 1, 4, 16, 64, 256, ...
-        let nearest_lower_power_of_4 = match current_iteration {
-            0 => 0,
-            x => 1 << ((x.leading_zeros() ^ 31) & !1),
+        // Usa i nuovi trait per calcolare i discount params
+        let params = match algorithm {
+            CfrAlgorithm::DCFR => DcfrAlgorithm.compute_discounts(current_iteration),
+            CfrAlgorithm::DCRFPlus => DcfrPlusAlgorithm.compute_discounts(current_iteration),
+            CfrAlgorithm::SAPCFRPlus => SapcfrPlusAlgorithm.compute_discounts(current_iteration),
         };
 
-        // Testing: use (t-1) for DCFR
-        let t_alpha = (current_iteration as i32 - 1).max(0) as f64;
-        let t_gamma = (current_iteration - nearest_lower_power_of_4) as f64;
-
-        let pow_alpha = t_alpha * t_alpha.sqrt();  // (t-1)^1.5
-        let pow_gamma = (t_gamma / (t_gamma + 1.0)).powi(3);
-
         Self {
-            alpha_t: (pow_alpha / (pow_alpha + 1.0)) as f32,
-            beta_t: 0.5,
-            gamma_t: pow_gamma as f32,
-            algorithm: CfrAlgorithm::DCFR,
+            alpha_t: params.alpha_t,
+            beta_t: params.beta_t,
+            gamma_t: params.gamma_t,
+            algorithm,
         }
     }
-
-    fn new_dcfr_plus(current_iteration: u32) -> Self {
-        // DCFR+: Using (t-1) as per the paper
-        // current_iteration is 0-indexed in the loop (0, 1, 2...), so it represents (t-1) directly.
-        
-        // Strategy resetting heuristic: Reset average strategy periodically
-        // 0, 1, 4, 16, 64, 256, ...
-        let nearest_lower_power_of_4 = match current_iteration {
-            0 => 0,
-            x => 1 << ((x.leading_zeros() ^ 31) & !1),
-        };
-
-        // Align t_alpha with DCFR: wipe regrets after iteration 2 by delaying discounting start
-        let t_alpha = (current_iteration as i32 - 1).max(0) as f64;
-        let t_gamma = (current_iteration - nearest_lower_power_of_4) as f64;
-
-        // Regret discount
-        let pow_alpha = t_alpha.powf(1.5);
-        let alpha_t = (pow_alpha / (pow_alpha + 1.0)) as f32;
-
-        // Strategy discount: ( t_gamma / (t_gamma + 1) )^gamma
-        // Use gamma=3.0 (cubic) to match DCFR's effective weight
-        let pow_gamma = (t_gamma / (t_gamma + 1.0)).powi(3);
-
-        Self {
-            alpha_t,
-            beta_t: 0.5,  // Not used in DCFR+
-            gamma_t: pow_gamma as f32,
-            algorithm: CfrAlgorithm::DCRFPlus,
-        }
-    }
+    // Le funzioni new_dcfr, new_dcfr_plus, new_sapcfr_plus sono state rimosse
+    // Ora usiamo i trait da cfr_algorithms per calcolare i discount params
 }
 
 /// Performs Discounted CFR algorithm until the given number of iterations or exploitability is
@@ -297,7 +272,71 @@ fn solve_recursive<T: Game>(
         });
 
         // compute the strategy by regret-maching algorithm
-        let mut strategy = if game.is_compression_enabled() {
+        let mut strategy = if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+             // SAPCFR+ Strategy Calculation (Explicit Regret)
+             let mut explicit_regrets = Vec::with_capacity(num_actions * num_hands);
+             
+             if game.is_compression_enabled() {
+                 let quantization_mode = game.quantization_mode();
+                 match quantization_mode {
+                     QuantizationMode::Int16 | QuantizationMode::Int16Log => {
+                         let implicit = node.regrets_compressed();
+                         let prev = node.prev_regrets_compressed();
+                         let scale_impl = node.regret_scale();
+                         let scale_prev = node.prev_regret_scale();
+                         let decode_factor = 1.0 / i16::MAX as f32;
+
+                         let num_elements = implicit.len();
+                         for i in 0..num_elements {
+                            let r_impl = implicit[i];
+                            let r_prev = prev[i];
+                            
+                            let v_impl = if quantization_mode == QuantizationMode::Int16Log {
+                                let log_val = r_impl as f32 * scale_impl * decode_factor;
+                                if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) }
+                            } else {
+                                r_impl as f32 * scale_impl * decode_factor
+                            };
+
+                            let v_prev = if quantization_mode == QuantizationMode::Int16Log {
+                                let log_val = r_prev as f32 * scale_prev * decode_factor;
+                                if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) }
+                            } else {
+                                r_prev as f32 * scale_prev * decode_factor
+                            };
+                            
+                            // Explicit = Implicit + 1/3 * Prev
+                            let explicit = v_impl + 0.33333333 * v_prev;
+                            explicit_regrets.push(explicit.max(0.0));
+                         }
+                     }
+                     _ => {
+                         // Fallback as Float32
+                         let implicit = node.regrets();
+                         let prev = node.prev_regrets();
+                         implicit.iter().zip(prev).for_each(|(&i, &p)| {
+                             let explicit = i + 0.33333333 * p;
+                             explicit_regrets.push(explicit.max(0.0));
+                         });
+                     }
+                 }
+             } else {
+                 // Float32 mode
+                 let implicit = node.regrets();
+                 let prev = node.prev_regrets();
+                 implicit.iter().zip(prev).for_each(|(&i, &p)| {
+                     let explicit = i + 0.33333333 * p;
+                     explicit_regrets.push(explicit.max(0.0));
+                 });
+             }
+             
+             #[cfg(feature = "custom-alloc")]
+             let strategy_vec = regret_matching(&explicit_regrets, num_actions);
+             #[cfg(not(feature = "custom-alloc"))]
+             let strategy_vec = regret_matching(&explicit_regrets, num_actions);
+             
+             strategy_vec
+        } else if game.is_compression_enabled() {
             if game.quantization_mode() == QuantizationMode::Int16Log {
                 regret_matching_compressed_log(node.regrets_compressed(), node.regret_scale(), num_actions)
             } else {
@@ -397,96 +436,144 @@ fn solve_recursive<T: Game>(
 
             // update the cumulative regret
             let scale = node.regret_scale();
-            let cum_regret = node.regrets_compressed_mut();
             let quantization_mode = game.quantization_mode();
 
-            match (params.algorithm, quantization_mode) {
-                // --- DCFR with Log Compression ---
-                (CfrAlgorithm::DCFR, QuantizationMode::Int16Log) => {
-                    let decoder = scale / i16::MAX as f32;
-                    let (alpha, beta) = (params.alpha_t, params.beta_t);
-
-                    cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                         // Decompress Log
-                        let log_val = *y as f32 * decoder;
-                        let real_prev = if log_val >= 0.0 {
-                            log_val.exp() - 1.0
-                        } else {
-                            -((-log_val).exp() - 1.0)
-                        };
-
-                        // DCFR Update
-                        let coef = if real_prev >= 0.0 { alpha } else { beta };
-                        *x += real_prev * coef;
-                    });
-                }
-                // --- DCFR+ with Log Compression ---
-                (CfrAlgorithm::DCRFPlus, QuantizationMode::Int16Log) => {
-                    let decoder = scale / i16::MAX as f32;
-                    let alpha = params.alpha_t;
-
-                    cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                         // Decompress Log
-                        let log_val = *y as f32 * decoder;
-                        let real_prev = if log_val >= 0.0 {
-                            log_val.exp() - 1.0
-                        } else {
-                            -((-log_val).exp() - 1.0)
-                        };
-
-                        // DCFR+ Update
-                        *x += real_prev * alpha;
-                    });
-                }
-                // --- DCFR with Linear Compression ---
-                (CfrAlgorithm::DCFR, _) => {
-                    let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
-                    let beta_decoder = params.beta_t * scale / i16::MAX as f32;
-
-                    cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                        // Linear Decompress + Update
-                        // Note: We check *y (sign of compressed) which corresponds to sign of real value in linear mode
-                        let coef = if *y >= 0 { alpha_decoder } else { beta_decoder };
-                        *x += *y as f32 * coef;
-                    });
-                }
-                // --- DCFR+ with Linear Compression ---
-                (CfrAlgorithm::DCRFPlus, _) => {
-                     let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
-                     cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                        *x += *y as f32 * alpha_decoder;
-                    });
-                }
-            }
-
-            cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
-                sub_slice(row, result);
-            });
-
-            if !locking.is_empty() {
-                cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
-                    if s.is_sign_positive() {
-                        *d = 0.0;
-                    }
-                })
-            }
-
-            // DCFR+: Clip negative regrets to zero after computing instantaneous regret
-            if params.algorithm == CfrAlgorithm::DCRFPlus {
-                cfv_actions.iter_mut().for_each(|x| {
-                    if *x < 0.0 {
-                        *x = 0.0;
-                    }
+            if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+                let (cum_regret, prev_regret) = node.regrets_and_prev_compressed_mut();
+                let decoder = scale / i16::MAX as f32;
+                
+                // 1. ADD: Implicit_New_Unclipped = Implicit_Old + Instantaneous
+                // Implicit_Old is in cum_regret (compressed). cfv_actions holds CFV.
+                cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                    let log_impl = *y as f32 * decoder;
+                    let val_impl = if quantization_mode == QuantizationMode::Int16Log {
+                        if log_impl >= 0.0 { log_impl.exp() - 1.0 } else { -((-log_impl).exp() - 1.0) }
+                    } else {
+                        log_impl
+                    };
+                    *x += val_impl;
                 });
-            }
 
-            // Encode (Log or Linear)
-            let new_scale = if quantization_mode == QuantizationMode::Int16Log {
-                encode_signed_slice_log(cum_regret, &cfv_actions)
+                // 2. Subtract EV -> cfv_actions holds (Implicit_Old + Instantaneous)
+                cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
+                    sub_slice(row, result);
+                });
+
+                // 3. Locking
+                if !locking.is_empty() {
+                    cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() { *d = 0.0; }
+                    })
+                }
+
+                // 4. Compute Prev_Regret (Instantaneous), Then Clip Implicit
+                // Prev = cfv_actions - Implicit_Old
+                // We reuse the logic loop to compute Prev and store it.
+                
+                let mut prev_vals = Vec::with_capacity(cfv_actions.len());
+                
+                // Use temp logic to recover Prev because we modified cfv_actions with clamping updates?
+                // Wait, we haven't clamped cfv_actions yet in this block.
+                // We just accumulated.
+                // But we need Implicit Old to recover Prev. 
+                // We have cum_regret which still holds Implicit_Old.
+                
+                cfv_actions.iter().zip(&*cum_regret).for_each(|(&sum_val, y)| {
+                    let log_impl = *y as f32 * decoder;
+                     let val_impl = if quantization_mode == QuantizationMode::Int16Log {
+                        if log_impl >= 0.0 { log_impl.exp() - 1.0 } else { -((-log_impl).exp() - 1.0) }
+                    } else {
+                        log_impl
+                    };
+                    prev_vals.push(sum_val - val_impl);
+                });
+                
+                // Clip Implicit (cfv_actions)
+               cfv_actions.iter_mut().for_each(|x| {
+                    if *x < 0.0 { *x = 0.0; }
+                });
+                
+                // Encode Prev -> storage4
+                let new_scale_prev = if quantization_mode == QuantizationMode::Int16Log {
+                    encode_signed_slice_log(prev_regret, &prev_vals)
+                } else {
+                    encode_signed_slice(prev_regret, &prev_vals)
+                };
+
+                // Encode Implicit -> storage2
+                let new_scale = if quantization_mode == QuantizationMode::Int16Log {
+                    encode_signed_slice_log(cum_regret, &cfv_actions)
+                } else {
+                    encode_signed_slice(cum_regret, &cfv_actions)
+                };
+
+                // Set scales AFTER encoding to drop mutable borrows of storage slices
+                node.set_prev_regret_scale(new_scale_prev);
+                node.set_regret_scale(new_scale);
+                
             } else {
-                encode_signed_slice(cum_regret, &cfv_actions)
-            };
-            node.set_regret_scale(new_scale);
+                let cum_regret = node.regrets_compressed_mut();
+                
+                match (params.algorithm, quantization_mode) {
+                    (CfrAlgorithm::DCFR, QuantizationMode::Int16Log) => {
+                        let decoder = scale / i16::MAX as f32;
+                        let (alpha, beta) = (params.alpha_t, params.beta_t);
+                        cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                            let log_val = *y as f32 * decoder;
+                            let real_prev = if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) };
+                            let coef = if real_prev >= 0.0 { alpha } else { beta };
+                            *x += real_prev * coef;
+                        });
+                    }
+                    (CfrAlgorithm::DCRFPlus, QuantizationMode::Int16Log) => {
+                        let decoder = scale / i16::MAX as f32;
+                        let alpha = params.alpha_t;
+                        cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                             let log_val = *y as f32 * decoder;
+                            let real_prev = if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) };
+                            *x += real_prev * alpha;
+                        });
+                    }
+                    (CfrAlgorithm::DCFR, _) => {
+                         let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
+                         let beta_decoder = params.beta_t * scale / i16::MAX as f32;
+                         cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                            let coef = if *y >= 0 { alpha_decoder } else { beta_decoder };
+                            *x += *y as f32 * coef;
+                        });
+                    }
+                    (CfrAlgorithm::DCRFPlus, _) => {
+                         let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
+                         cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                            *x += *y as f32 * alpha_decoder;
+                        });
+                    }
+                    _ => {}
+                }
+
+                cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
+                    sub_slice(row, result);
+                });
+
+                if !locking.is_empty() {
+                    cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() { *d = 0.0; }
+                    })
+                }
+
+                if params.algorithm == CfrAlgorithm::DCRFPlus {
+                    cfv_actions.iter_mut().for_each(|x| {
+                        if *x < 0.0 { *x = 0.0; }
+                    });
+                }
+
+                let new_scale = if quantization_mode == QuantizationMode::Int16Log {
+                    encode_signed_slice_log(cum_regret, &cfv_actions)
+                } else {
+                    encode_signed_slice(cum_regret, &cfv_actions)
+                };
+                node.set_regret_scale(new_scale);
+            }
         } else {
             // update the cumulative strategy
             let gamma = params.gamma_t;
@@ -511,7 +598,6 @@ fn solve_recursive<T: Game>(
                 }
                 CfrAlgorithm::DCRFPlus => {
                     // DCFR+: discount, then add instantaneous regret, then clip
-                    // Must compute instantaneous regret BEFORE clipping (like compressed path)
                     let alpha = params.alpha_t;
                     cum_regret.iter_mut().zip(&*cfv_actions).for_each(|(x, y)| {
                         *x = *x * alpha + *y;
@@ -521,9 +607,24 @@ fn solve_recursive<T: Game>(
                     });
                     // Clip after computing instantaneous regret
                     cum_regret.iter_mut().for_each(|x| {
-                        if *x < 0.0 {
-                            *x = 0.0;
-                        }
+                         if *x < 0.0 { *x = 0.0; }
+                    });
+                }
+                CfrAlgorithm::SAPCFRPlus => {
+                    // SAPCFR+ (Uncompressed / Float32)
+                    let mut inst_regrets = Vec::with_capacity(cfv_actions.len());
+                    inst_regrets.extend_from_slice(&cfv_actions);
+                    inst_regrets.chunks_exact_mut(num_hands).for_each(|row| {
+                        sub_slice(row, result);
+                    });
+                    
+                    // Update Implicit (storage2) and Prev (storage4) simultaneously
+                    // Use split-borrow method
+                    let (implicit, prev) = node.regrets_and_prev_mut();
+                    
+                    implicit.iter_mut().zip(prev.iter_mut()).zip(&inst_regrets).for_each(|((reg_impl, reg_prev), &reg_inst)| {
+                        *reg_impl = (*reg_impl + reg_inst).max(0.0);
+                        *reg_prev = reg_inst;
                     });
                 }
             }
@@ -532,7 +633,67 @@ fn solve_recursive<T: Game>(
     // if the current player is not `player`
     else {
         // compute the strategy by regret-matching algorithm
-        let mut cfreach_actions = if game.is_compression_enabled() {
+        let mut cfreach_actions = if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+             // SAPCFR+ Strategy Calculation (Explicit Regret) for opponent
+             let node_num_hands = game.num_private_hands(node.player());
+             let mut explicit_regrets = Vec::with_capacity(num_actions * node_num_hands);
+             
+             if game.is_compression_enabled() {
+                 let quantization_mode = game.quantization_mode();
+                 match quantization_mode {
+                     QuantizationMode::Int16 | QuantizationMode::Int16Log => {
+                         let implicit = node.regrets_compressed();
+                         let prev = node.prev_regrets_compressed();
+                         let scale_impl = node.regret_scale();
+                         let scale_prev = node.prev_regret_scale();
+                         let decode_factor = 1.0 / i16::MAX as f32;
+
+                         let num_elements = implicit.len();
+                         for i in 0..num_elements {
+                            let r_impl = implicit[i];
+                            let r_prev = prev[i];
+                            
+                            let v_impl = if quantization_mode == QuantizationMode::Int16Log {
+                                let log_val = r_impl as f32 * scale_impl * decode_factor;
+                                if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) }
+                            } else {
+                                r_impl as f32 * scale_impl * decode_factor
+                            };
+
+                            let v_prev = if quantization_mode == QuantizationMode::Int16Log {
+                                let log_val = r_prev as f32 * scale_prev * decode_factor;
+                                if log_val >= 0.0 { log_val.exp() - 1.0 } else { -((-log_val).exp() - 1.0) }
+                            } else {
+                                r_prev as f32 * scale_prev * decode_factor
+                            };
+                            
+                            // Explicit = Implicit + 1/3 * Prev
+                            let explicit = v_impl + 0.33333333 * v_prev;
+                            explicit_regrets.push(explicit.max(0.0));
+                         }
+                     }
+                     _ => {
+                         // Fallback as Float32
+                         let implicit = node.regrets();
+                         let prev = node.prev_regrets();
+                         implicit.iter().zip(prev).for_each(|(&i, &p)| {
+                             let explicit = i + 0.33333333 * p;
+                             explicit_regrets.push(explicit.max(0.0));
+                         });
+                     }
+                 }
+             } else {
+                 // Float32 mode
+                 let implicit = node.regrets();
+                 let prev = node.prev_regrets();
+                 implicit.iter().zip(prev).for_each(|(&i, &p)| {
+                     let explicit = i + 0.33333333 * p;
+                     explicit_regrets.push(explicit.max(0.0));
+                 });
+             }
+             
+             regret_matching(&explicit_regrets, num_actions)
+        } else if game.is_compression_enabled() {
             if game.quantization_mode() == QuantizationMode::Int16Log {
                 regret_matching_compressed_log(node.regrets_compressed(), node.regret_scale(), num_actions)
             } else {
@@ -721,46 +882,3 @@ fn regret_matching_compressed_log(regret: &[i16], scale: f32, num_actions: usize
     strategy
 }
 
-/// Computes the strategy by regret-matching for DCFR+ (unsigned interpretation).
-/// DCFR+ stores unsigned values [0, 65535] as i16, so we need to reinterpret them.
-#[cfg(feature = "custom-alloc")]
-#[inline]
-fn regret_matching_compressed_unsigned(regret: &[i16], num_actions: usize) -> Vec<f32, StackAlloc> {
-    let mut strategy = Vec::with_capacity_in(regret.len(), StackAlloc);
-    // Reinterpret i16 as u16 for DCFR+ (regrets are always >= 0 after clipping)
-    strategy.extend(regret.iter().map(|&r| (r as u16) as f32));
-
-    let row_size = strategy.len() / num_actions;
-    let mut denom = Vec::with_capacity_in(row_size, StackAlloc);
-    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
-    unsafe { denom.set_len(row_size) };
-
-    let default = 1.0 / num_actions as f32;
-    strategy.chunks_exact_mut(row_size).for_each(|row| {
-        div_slice(row, &denom, default);
-    });
-
-    strategy
-}
-
-/// Computes the strategy by regret-matching for DCFR+ (unsigned interpretation).
-/// DCFR+ stores unsigned values [0, 65535] as i16, so we need to reinterpret them.
-#[cfg(not(feature = "custom-alloc"))]
-#[inline]
-fn regret_matching_compressed_unsigned(regret: &[i16], num_actions: usize) -> Vec<f32> {
-    let mut strategy = Vec::with_capacity(regret.len());
-    // Reinterpret i16 as u16 for DCFR+ (regrets are always >= 0 after clipping)
-    strategy.extend(regret.iter().map(|&r| (r as u16) as f32));
-
-    let row_size = strategy.len() / num_actions;
-    let mut denom = Vec::with_capacity(row_size);
-    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
-    unsafe { denom.set_len(row_size) };
-
-    let default = 1.0 / num_actions as f32;
-    strategy.chunks_exact_mut(row_size).for_each(|row| {
-        div_slice(row, &denom, default);
-    });
-
-    strategy
-}

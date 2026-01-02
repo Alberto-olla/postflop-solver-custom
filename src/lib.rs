@@ -75,6 +75,10 @@ mod sliceop;
 mod solver;
 mod utility;
 
+// Nuovo modulo trait-based per algoritmi CFR
+// Esportato pubblicamente per permettere custom algorithms
+pub mod cfr_algorithms;
+
 #[cfg(feature = "bincode")]
 pub use file::*;
 

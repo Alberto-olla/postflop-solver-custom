@@ -22,7 +22,7 @@ impl Game for PostFlopGame {
     type Node = PostFlopNode;
 
     #[inline]
-    fn root(&self) -> MutexGuardLike<Self::Node> {
+    fn root(&self) -> MutexGuardLike<'_, Self::Node> {
         self.node_arena[0].lock()
     }
 
@@ -203,6 +203,7 @@ impl Default for PostFlopGame {
             storage2: Vec::default(),
             storage_ip: Vec::default(),
             storage_chance: Vec::default(),
+            storage4: Vec::default(),
             locking_strategy: BTreeMap::default(),
             action_history: Vec::default(),
             node_history: Vec::default(),
@@ -366,8 +367,13 @@ impl PostFlopGame {
         }
 
         let num_elements = 2 * self.num_storage + self.num_storage_ip + self.num_storage_chance;
-        let uncompressed = 4 * num_elements + self.misc_memory_usage;
-        let compressed = 2 * num_elements + self.misc_memory_usage;
+        let sapcfr_extra = if self.cfr_algorithm.requires_storage4() {
+            self.num_storage
+        } else {
+            0
+        };
+        let uncompressed = 4 * (num_elements + sapcfr_extra) + self.misc_memory_usage;
+        let compressed = 2 * (num_elements + sapcfr_extra) + self.misc_memory_usage;
 
         (uncompressed, compressed)
     }
@@ -485,6 +491,11 @@ impl PostFlopGame {
         self.storage2 = vec![0; storage2_bytes];
         self.storage_ip = vec![0; storage_ip_bytes];
         self.storage_chance = vec![0; storage_chance_bytes];
+
+        if self.cfr_algorithm.requires_storage4() {
+            let storage4_bytes = (regrets_bytes_per_elem * self.num_storage) as usize;
+            self.storage4 = vec![0; storage4_bytes];
+        }
 
         self.allocate_memory_nodes();
 
@@ -638,7 +649,8 @@ impl PostFlopGame {
         let bytes = self.storage1.len()
                   + self.storage2.len()
                   + self.storage_ip.len()
-                  + self.storage_chance.len();
+                  + self.storage_chance.len()
+                  + self.storage4.len();
         bytes as f64 / 1_048_576.0
     }
 
@@ -654,6 +666,12 @@ impl PostFlopGame {
             self.storage_ip.len() as f64 / mb,
             self.storage_chance.len() as f64 / mb,
         )
+    }
+
+    /// Returns the memory usage of storage4 (SAPCFR+ prev regrets) in megabytes.
+    #[inline]
+    pub fn memory_usage_storage4_mb(&self) -> f64 {
+        self.storage4.len() as f64 / 1_048_576.0
     }
 
     /// Finalizes the solution and releases regrets memory.
@@ -696,6 +714,7 @@ impl PostFlopGame {
 
         // Free regrets - they are no longer needed after solving
         self.storage2 = Vec::new();  // Drops the old Vec, freeing memory
+        self.storage4 = Vec::new();  // Free SAPCFR+ prev regrets logic too
 
         // Mark as finalized
         self.state = State::Finalized;
@@ -936,6 +955,7 @@ impl PostFlopGame {
         self.storage2 = Vec::new();
         self.storage_ip = Vec::new();
         self.storage_chance = Vec::new();
+        self.storage4 = Vec::new();
     }
 
     /// Counts the number of nodes in the game tree.
@@ -1803,6 +1823,8 @@ impl PostFlopGame {
         let mut regrets_counter = 0;
         let mut ip_counter = 0;
         let mut chance_counter = 0;
+        let mut storage4_counter = 0;
+        let use_storage4 = !self.storage4.is_empty();
 
         for node in &self.node_arena {
             let mut node = node.lock();
@@ -1817,7 +1839,10 @@ impl PostFlopGame {
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;
+                node.scale1 = 1.0;
+                node.scale2 = 1.0;
                 node.scale3 = 1.0;
+                node.scale4 = 1.0;
             } else {
                 unsafe {
                     let ptr1 = self.storage1.as_mut_ptr();
@@ -1826,6 +1851,10 @@ impl PostFlopGame {
                     node.storage1 = ptr1.add(strategy_counter);
                     node.storage2 = ptr2.add(regrets_counter);
                     node.storage3 = ptr3.add(ip_counter);
+                    if use_storage4 {
+                        let ptr4 = self.storage4.as_mut_ptr();
+                        node.storage4 = ptr4.add(storage4_counter);
+                    }
                 }
                 // For nibble mode, 2 values per byte
                 let strategy_increment = if is_nibble_mode {
@@ -1836,10 +1865,14 @@ impl PostFlopGame {
                 strategy_counter += strategy_increment;
                 regrets_counter += regrets_bytes * node.num_elements as usize;
                 ip_counter += regrets_bytes * node.num_elements_ip as usize;
+                if use_storage4 {
+                    storage4_counter += regrets_bytes * node.num_elements as usize;
+                }
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;
                 node.scale3 = 1.0;
+                node.scale4 = 1.0;
             }
         }
     }

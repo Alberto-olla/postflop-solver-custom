@@ -10,7 +10,7 @@ pub trait Game: Send + Sync {
 
     /// Returns the root node of game tree.
     #[doc(hidden)]
-    fn root(&self) -> MutexGuardLike<Self::Node>;
+    fn root(&self) -> MutexGuardLike<'_, Self::Node>;
 
     /// Returns the number of private hands of given player.
     #[doc(hidden)]
@@ -141,7 +141,7 @@ pub trait GameNode: Send + Sync {
 
     /// Returns the node after taking the given action.
     #[doc(hidden)]
-    fn play(&self, action: usize) -> MutexGuardLike<Self>;
+    fn play(&self, action: usize) -> MutexGuardLike<'_, Self>;
 
     /// Returns the strategy.
     #[doc(hidden)]
@@ -437,5 +437,79 @@ pub trait GameNode: Send + Sync {
     #[doc(hidden)]
     fn num_elements(&self) -> usize {
         self.strategy().len()
+    }
+
+    /// Returns the scale of the compressed previous instantaneous regrets.
+    #[doc(hidden)]
+    fn prev_regret_scale(&self) -> f32 {
+        unreachable!()
+    }
+
+    /// Sets the scale of the compressed previous instantaneous regrets.
+    #[doc(hidden)]
+    fn set_prev_regret_scale(&mut self, _scale: f32) {
+        unreachable!()
+    }
+
+    /// Returns the previous instantaneous regrets (uncompressed).
+    #[doc(hidden)]
+    fn prev_regrets(&self) -> &[f32] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the previous instantaneous regrets (uncompressed).
+    #[doc(hidden)]
+    fn prev_regrets_mut(&mut self) -> &mut [f32] {
+        unreachable!()
+    }
+    
+    /// Returns mutable references to both regrets and previous regrets (uncompressed).
+    /// Used to avoid borrow checker issues when accessing both simultaneously.
+    #[doc(hidden)]
+    fn regrets_and_prev_mut(&mut self) -> (&mut [f32], &mut [f32]) {
+        unreachable!()
+    }
+
+    /// Returns the compressed previous instantaneous regrets.
+    #[doc(hidden)]
+    fn prev_regrets_compressed(&self) -> &[i16] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the compressed previous instantaneous regrets.
+    #[doc(hidden)]
+    fn prev_regrets_compressed_mut(&mut self) -> &mut [i16] {
+        unreachable!()
+    }
+    
+    /// Returns mutable references to both regrets and previous regrets (compressed).
+    /// Used to avoid borrow checker issues when accessing both simultaneously.
+    #[doc(hidden)]
+    fn regrets_and_prev_compressed_mut(&mut self) -> (&mut [i16], &mut [i16]) {
+        unreachable!()
+    }
+    
+    /// Returns the 8-bit quantized previous instantaneous regrets.
+    #[doc(hidden)]
+    fn prev_regrets_i8(&self) -> &[i8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized previous instantaneous regrets.
+    #[doc(hidden)]
+    fn prev_regrets_i8_mut(&mut self) -> &mut [i8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit quantized previous instantaneous regrets (packed).
+    #[doc(hidden)]
+    fn prev_regrets_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit quantized previous instantaneous regrets (packed).
+    #[doc(hidden)]
+    fn prev_regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
     }
 }

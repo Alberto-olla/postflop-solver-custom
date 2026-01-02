@@ -1,0 +1,28 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target/release/examples/solve_from_config benchmark_dcfr.toml`
+Loading configuration from: benchmark_dcfr.toml
+Configuration loaded successfully!
+  OOP range: AhQh
+  IP range: AJs:0.00,QTs:0.00,QTo:0.01,Q9o:0.00,Q7o:0.00,Q6s:0.00,Q6o:0.01,Q5o:0.01,Q5s:0.00,Q3o:0.00,Q2s:0.00,JTo:0.00,J9o:0.00,J9s:0.00,J8s:0.00,TT:0.00,T9o:0.00,T9s:0.00,T8s:0.00,T8o:0.00,T7o:0.02,T7s:0.00,T6o:0.01,T6s:0.00,T5o:0.00,T4o:0.00,T4s:0.00,T3s:0.00,98o:0.00,98s:0.00,97o:0.00,97s:0.00,96o:0.00,95o:0.00,95s:0.00,94s:0.00,94o:0.00,93s:0.01,93o:0.00,92o:0.00,88:0.00,87o:0.00,87s:0.00,86o:0.00,86s:0.00,85o:0.00,84o:0.00,83o:0.00,83s:0.00,82o:0.00,77:0.00,76o:0.00,75o:0.00,74s:0.00,74o:0.00,73o:0.00,73s:0.00,72o:0.00,72s:0.00,66:0.00,65s:0.00,64o:0.00,63o:0.00,62o:0.00,62s:0.00,55:0.00,54s:0.00,54o:0.00,53o:0.00,52s:0.00,52o:0.00,43o:0.00,42s:0.00,42o:0.00,33:0.00,32s:0.00,32o:0.01,22:0.01
+  Board: 7h6d6h 5s 
+  Initial state: Turn
+
+Building game tree...
+
+Memory usage comparison:
+  32-bit float:    0.06 GB (baseline)
+  16-bit integer:  0.04 GB (-50.0%)
+Using algorithm: DCFR (dual discount factors)
+Using 16-bit precision (compressed)
+
+Solving (max 500 iterations)...
+iteration: 0 / 500 (exploitability = 4.8752e3)iteration: 10 / 500 (exploitability = 3.0437e3)iteration: 20 / 500 (exploitability = 1.7560e3)iteration: 30 / 500 (exploitability = 7.1117e2)iteration: 40 / 500 (exploitability = 3.5677e2)iteration: 50 / 500 (exploitability = 2.4534e2)iteration: 60 / 500 (exploitability = 1.3892e2)iteration: 70 / 500 (exploitability = 1.8278e2)iteration: 80 / 500 (exploitability = 1.5147e2)iteration: 90 / 500 (exploitability = 8.4493e1)iteration: 100 / 500 (exploitability = 5.8859e1)iteration: 110 / 500 (exploitability = 4.3575e1)iteration: 120 / 500 (exploitability = 3.1488e1)iteration: 130 / 500 (exploitability = 2.7220e1)iteration: 140 / 500 (exploitability = 2.1449e1)iteration: 150 / 500 (exploitability = 2.0148e1)iteration: 160 / 500 (exploitability = 1.7057e1)iteration: 170 / 500 (exploitability = 4.5598e1)iteration: 180 / 500 (exploitability = 1.4810e2)iteration: 190 / 500 (exploitability = 1.2214e2)iteration: 200 / 500 (exploitability = 9.7475e1)iteration: 210 / 500 (exploitability = 7.6921e1)iteration: 220 / 500 (exploitability = 6.6866e1)iteration: 230 / 500 (exploitability = 5.8202e1)iteration: 240 / 500 (exploitability = 5.0204e1)iteration: 250 / 500 (exploitability = 4.2103e1)iteration: 260 / 500 (exploitability = 7.2588e1)iteration: 270 / 500 (exploitability = 4.6361e1)iteration: 280 / 500 (exploitability = 3.9278e1)iteration: 290 / 500 (exploitability = 2.2203e1)iteration: 300 / 500 (exploitability = 2.1201e1)iteration: 310 / 500 (exploitability = 1.8299e1)iteration: 320 / 500 (exploitability = 1.4993e1)iteration: 330 / 500 (exploitability = 1.3883e1)iteration: 340 / 500 (exploitability = 1.3319e1)iteration: 350 / 500 (exploitability = 1.2514e1)iteration: 360 / 500 (exploitability = 1.2169e1)iteration: 370 / 500 (exploitability = 1.1255e1)iteration: 380 / 500 (exploitability = 9.5603e0)iteration: 390 / 500 (exploitability = 8.1529e0)iteration: 400 / 500 (exploitability = 7.2610e0)iteration: 410 / 500 (exploitability = 6.5182e0)iteration: 420 / 500 (exploitability = 5.7806e0)iteration: 430 / 500 (exploitability = 5.2640e0)iteration: 440 / 500 (exploitability = 4.9064e0)iteration: 450 / 500 (exploitability = 4.4849e0)iteration: 460 / 500 (exploitability = 4.8653e0)iteration: 470 / 500 (exploitability = 4.2391e0)iteration: 480 / 500 (exploitability = 4.4663e0)iteration: 490 / 500 (exploitability = 5.2938e0)iteration: 500 / 500 (exploitability = 4.9756e0)
+
+✓ Solving completed in 3.67s
+
+Saving to: benchmark_results/benchmark_dcfr-16.bin
+✓ Game saved successfully!
+
+File: benchmark_dcfr-16.bin
+Size: 1.65 MB
+Compression: zstd level 0

@@ -48,8 +48,8 @@ ip_raise = "minimal"
 [solver]
 max_iterations = 1000
 target_exploitability_pct = 0.5
-quantization = "16bit-log"
-algorithm = "dcfr+"
+quantization = "16bit"
+algorithm = "dcfr"
 zstd_compression_level = 3
 dry_run = false
 

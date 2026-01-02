@@ -227,20 +227,6 @@ pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
     scale
 }
 
-/// Encodes the `f32` slice as unsigned values into an `i16` slice (for DCFR+ regrets after clipping).
-/// This provides 2x precision compared to signed encoding when all values are >= 0.
-/// Returns the scale factor used.
-#[inline]
-pub(crate) fn encode_unsigned_as_i16(dst: &mut [i16], slice: &[f32]) -> f32 {
-    let scale = slice_nonnegative_max(slice);
-    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
-    let encoder = u16::MAX as f32 / scale_nonzero;
-    dst.iter_mut().zip(slice).for_each(|(d, s)| {
-        let val = unsafe { (s * encoder + 0.49999997).to_int_unchecked::<u32>() as u16 };
-        *d = val as i16;  // Reinterpret u16 as i16 (same bit pattern)
-    });
-    scale
-}
 
 /// Encodes the `f32` slice to the `i16` slice using logarithmic compression (signed magnitude biasing).
 /// This compresses the dynamic range, allowing better precision for both small and large values.
@@ -270,22 +256,6 @@ pub(crate) fn encode_signed_slice_log(dst: &mut [i16], slice: &[f32]) -> f32 {
     scale
 }
 
-/// Decodes the `i16` slice to `f32` using logarithmic decompression.
-/// This is the inverse of encode_signed_slice_log.
-/// Formula: decompressed = sign(x) * expm1(abs(x))
-#[inline]
-pub(crate) fn decode_signed_slice_log(src: &[i16], scale: f32) -> Vec<f32> {
-    let decoder = scale / i16::MAX as f32;
-
-    src.iter().map(|&x| {
-        let log_val = x as f32 * decoder;
-        if log_val >= 0.0 {
-            log_val.exp() - 1.0
-        } else {
-            -((-log_val).exp() - 1.0)
-        }
-    }).collect()
-}
 
 /// Encodes the `f32` slice to the `u8` slice for strategy, and returns the scale.
 /// Uses unsigned quantization with stochastic rounding: maps [0, max] to [0, 255].
@@ -323,12 +293,6 @@ pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 
     scale
 }
 
-/// Decodes the `u8` slice to `f32` for strategy.
-#[inline]
-pub(crate) fn decode_unsigned_strategy_u8(src: &[u8], scale: f32) -> Vec<f32> {
-    let decoder = scale / u8::MAX as f32;
-    src.iter().map(|&x| x as f32 * decoder).collect()
-}
 
 /// Encodes the `f32` slice to the `i8` slice for signed values (e.g., cfvalues_chance), and returns the scale.
 /// Uses signed quantization: maps [-max_abs, max_abs] to [-127, 127].
@@ -407,27 +371,6 @@ pub(crate) fn encode_unsigned_strategy_u4(dst: &mut [u8], slice: &[f32]) -> f32 
     scale
 }
 
-/// Decodes 4-bit nibbles (packed in `u8` array) to `f32` for strategy.
-/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
-#[inline]
-pub(crate) fn decode_unsigned_strategy_u4(src: &[u8], num_elements: usize, scale: f32) -> Vec<f32> {
-    let decoder = scale / 15.0;  // 4-bit max value is 15
-    let mut result = Vec::with_capacity(num_elements);
-
-    for i in 0..num_elements {
-        let byte_idx = i / 2;
-        let nibble = if i % 2 == 0 {
-            // Low nibble (even index)
-            src[byte_idx] & 0x0F
-        } else {
-            // High nibble (odd index)
-            (src[byte_idx] >> 4) & 0x0F
-        };
-        result.push(nibble as f32 * decoder);
-    }
-
-    result
-}
 
 /// Applies the given swap to the given slice.
 #[inline]

@@ -244,6 +244,9 @@ fn bet_size_from_str(s: &str, is_raise: bool) -> Result<BetSize, String> {
     } else if s_lower == "a" {
         // All-in
         Ok(BetSize::AllIn)
+    } else if s_lower == "full" || s_lower == "pot" {
+        // Pot (100%)
+        Ok(BetSize::PotRelative(1.0))
     } else {
         // Parse error
         Err(err_msg)

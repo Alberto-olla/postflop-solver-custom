@@ -35,7 +35,7 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
-    fn play(&self, action: usize) -> MutexGuardLike<Self> {
+    fn play(&self, action: usize) -> MutexGuardLike<'_, Self> {
         self.children()[action].lock()
     }
 
@@ -289,6 +289,78 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
+    fn prev_regret_scale(&self) -> f32 {
+        self.scale4
+    }
+
+    #[inline]
+    fn set_prev_regret_scale(&mut self, scale: f32) {
+        self.scale4 = scale;
+    }
+
+    #[inline]
+    fn prev_regrets(&self) -> &[f32] {
+        unsafe { slice::from_raw_parts(self.storage4 as *const f32, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn prev_regrets_mut(&mut self) -> &mut [f32] {
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut f32, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn regrets_and_prev_mut(&mut self) -> (&mut [f32], &mut [f32]) {
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut f32, self.num_elements as usize),
+                slice::from_raw_parts_mut(self.storage4 as *mut f32, self.num_elements as usize),
+            )
+        }
+    }
+
+    #[inline]
+    fn prev_regrets_compressed(&self) -> &[i16] {
+        unsafe { slice::from_raw_parts(self.storage4 as *const i16, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn prev_regrets_compressed_mut(&mut self) -> &mut [i16] {
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut i16, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn regrets_and_prev_compressed_mut(&mut self) -> (&mut [i16], &mut [i16]) {
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut i16, self.num_elements as usize),
+                slice::from_raw_parts_mut(self.storage4 as *mut i16, self.num_elements as usize),
+            )
+        }
+    }
+
+    #[inline]
+    fn prev_regrets_i8(&self) -> &[i8] {
+        unsafe { slice::from_raw_parts(self.storage4 as *const i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn prev_regrets_i8_mut(&mut self) -> &mut [i8] {
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut i8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn prev_regrets_i4_packed(&self) -> &[u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage4 as *const u8, packed_len) }
+    }
+
+    #[inline]
+    fn prev_regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        let packed_len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut u8, packed_len) }
+    }
+
+    #[inline]
     fn enable_parallelization(&self) -> bool {
         self.river == NOT_DEALT
     }
@@ -307,13 +379,15 @@ impl Default for PostFlopNode {
             children_offset: 0,
             num_children: 0,
             num_elements_ip: 0,
-            storage1: ptr::null_mut(),
-            storage2: ptr::null_mut(),
-            storage3: ptr::null_mut(),
             num_elements: 0,
             scale1: 0.0,
             scale2: 0.0,
             scale3: 0.0,
+            scale4: 0.0,
+            storage1: ptr::null_mut(),
+            storage2: ptr::null_mut(),
+            storage3: ptr::null_mut(),
+            storage4: ptr::null_mut(),
         }
     }
 }

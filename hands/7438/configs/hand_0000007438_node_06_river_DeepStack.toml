@@ -47,10 +47,9 @@ ip_raise = "full"
 
 [solver]
 max_iterations = 1000
-target_exploitability_pct = 0.05
+target_exploitability_pct = 0.1
 quantization = "16bit"
-algorithm = "dcfr+"
-use_compression = false
+algorithm = "sapcfr+"
 zstd_compression_level = 0
 dry_run = false
 

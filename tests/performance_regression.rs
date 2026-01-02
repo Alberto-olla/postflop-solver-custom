@@ -1,0 +1,382 @@
+//! Performance regression tests for the three CFR algorithms
+//!
+//! These tests use the exact configuration from node_03_turn TOML file
+//! to ensure consistent comparison with baseline results.
+//!
+//! Run with: cargo test --release --test performance_regression -- --nocapture
+
+use postflop_solver::*;
+use std::time::Instant;
+use std::fs;
+use serde::Deserialize;
+
+// Same config structures as solve_from_config example
+#[derive(Debug, Deserialize)]
+struct Config {
+    ranges: Ranges,
+    cards: Cards,
+    tree: TreeSettings,
+    bet_sizes: BetSizes,
+    solver: SolverSettings,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ranges {
+    oop: String,
+    ip: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Cards {
+    flop: String,
+    #[serde(default)]
+    turn: String,
+    #[serde(default)]
+    river: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TreeSettings {
+    starting_pot: i32,
+    effective_stack: i32,
+    #[serde(default)]
+    rake_rate: f64,
+    #[serde(default)]
+    rake_cap: f64,
+    #[serde(default = "default_add_allin_threshold")]
+    add_allin_threshold: f64,
+    #[serde(default = "default_force_allin_threshold")]
+    force_allin_threshold: f64,
+    #[serde(default = "default_merging_threshold")]
+    merging_threshold: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct BetSizes {
+    flop: StreetBetSizes,
+    turn: StreetBetSizes,
+    river: StreetBetSizes,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreetBetSizes {
+    #[serde(default)]
+    oop_bet: String,
+    #[serde(default)]
+    oop_raise: String,
+    #[serde(default)]
+    ip_bet: String,
+    #[serde(default)]
+    ip_raise: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SolverSettings {
+    max_iterations: usize,
+    target_exploitability_pct: f32,
+}
+
+fn default_add_allin_threshold() -> f64 { 1.5 }
+fn default_force_allin_threshold() -> f64 { 0.15 }
+fn default_merging_threshold() -> f64 { 0.1 }
+
+/// Load game from TOML config file
+fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
+    let config_content = fs::read_to_string(path)
+        .expect(&format!("Failed to read config file: {}", path));
+
+    let config: Config = toml::from_str(&config_content)
+        .expect("Failed to parse config file");
+
+    // Parse cards
+    let flop = flop_from_str(&config.cards.flop).expect("Invalid flop");
+    let turn = if config.cards.turn.is_empty() {
+        NOT_DEALT
+    } else {
+        card_from_str(&config.cards.turn).expect("Invalid turn")
+    };
+    let river = if config.cards.river.is_empty() {
+        NOT_DEALT
+    } else {
+        card_from_str(&config.cards.river).expect("Invalid river")
+    };
+
+    // Determine initial state
+    let initial_state = if river != NOT_DEALT {
+        BoardState::River
+    } else if turn != NOT_DEALT {
+        BoardState::Turn
+    } else {
+        BoardState::Flop
+    };
+
+    // Parse ranges
+    let oop_range = config.ranges.oop.parse().expect("Invalid OOP range");
+    let ip_range = config.ranges.ip.parse().expect("Invalid IP range");
+
+    let card_config = CardConfig {
+        range: [oop_range, ip_range],
+        flop,
+        turn,
+        river,
+    };
+
+    // Parse bet sizes - simple version (just convert directly without preset expansion)
+    let parse_simple_sizes = |street: &StreetBetSizes| -> [BetSizeOptions; 2] {
+        [
+            BetSizeOptions::try_from((street.oop_bet.as_str(), street.oop_raise.as_str())).unwrap(),
+            BetSizeOptions::try_from((street.ip_bet.as_str(), street.ip_raise.as_str())).unwrap(),
+        ]
+    };
+
+    let tree_config = TreeConfig {
+        initial_state,
+        starting_pot: config.tree.starting_pot,
+        effective_stack: config.tree.effective_stack,
+        rake_rate: config.tree.rake_rate,
+        rake_cap: config.tree.rake_cap,
+        flop_bet_sizes: parse_simple_sizes(&config.bet_sizes.flop),
+        turn_bet_sizes: parse_simple_sizes(&config.bet_sizes.turn),
+        river_bet_sizes: parse_simple_sizes(&config.bet_sizes.river),
+        add_allin_threshold: config.tree.add_allin_threshold,
+        force_allin_threshold: config.tree.force_allin_threshold,
+        merging_threshold: config.tree.merging_threshold,
+        ..Default::default()
+    };
+
+    let action_tree = ActionTree::new(tree_config).expect("Failed to build action tree");
+    let game = PostFlopGame::with_config(card_config, action_tree)
+        .expect("Failed to create game");
+
+    // Calculate target exploitability from percentage
+    let target_expl = config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
+
+    (game, config.solver.max_iterations as u32, target_expl)
+}
+
+// ============================================================================
+// TEST 1: DCFR with 16-bit precision
+// ============================================================================
+
+#[test]
+fn test_performance_dcfr_16bit_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline values from empirical testing
+    const BASELINE_ITERATIONS: u32 = 160; // For reference only
+    const BASELINE_TIME_SECS: f32 = 4.42;
+
+    // Tolerance: allow 5% degradation for time
+    const TIME_TOLERANCE: f32 = 1.01;
+
+    // Load game from TOML
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // Configure for DCFR with 16-bit
+    game.set_cfr_algorithm(CfrAlgorithm::DCFR);
+    game.allocate_memory(true); // 16-bit mode
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("\n=== DCFR 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(
+        final_expl <= target_expl,
+        "Failed to reach target exploitability. Got: {}, Target: {}",
+        final_expl,
+        target_expl
+    );
+
+    // WARNING: Time should not increase significantly
+    assert!(
+        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
+        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
+        BASELINE_TIME_SECS,
+        time_secs,
+        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
+    );
+
+    // SUCCESS: Print if performance improved
+    if time_secs < BASELINE_TIME_SECS * 0.90 {
+        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+                 BASELINE_TIME_SECS - time_secs,
+                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+    }
+}
+
+// ============================================================================
+// TEST 2: DCFR+ with 16-bit precision
+// ============================================================================
+
+#[test]
+fn test_performance_dcfrplus_16bit_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline values from empirical testing
+    const BASELINE_ITERATIONS: u32 = 290; // For reference only
+    const BASELINE_TIME_SECS: f32 = 7.56;
+
+    // Tolerance: allow 5% degradation for time
+    const TIME_TOLERANCE: f32 = 1.05;
+
+    // Load game from TOML
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // Configure for DCFR+ with 16-bit
+    game.set_cfr_algorithm(CfrAlgorithm::DCRFPlus);
+    game.allocate_memory(true); // 16-bit mode
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("\n=== DCFR+ 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(
+        final_expl <= target_expl,
+        "Failed to reach target exploitability. Got: {}, Target: {}",
+        final_expl,
+        target_expl
+    );
+
+    // WARNING: Time should not increase significantly
+    assert!(
+        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
+        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
+        BASELINE_TIME_SECS,
+        time_secs,
+        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
+    );
+
+    // SUCCESS: Print if performance improved
+    if time_secs < BASELINE_TIME_SECS * 0.90 {
+        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+                 BASELINE_TIME_SECS - time_secs,
+                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+    }
+}
+
+// ============================================================================
+// TEST 3: SAPCFR+ with 16-bit precision
+// ============================================================================
+
+#[test]
+fn test_performance_sapcfrplus_16bit_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline values from empirical testing
+    const BASELINE_ITERATIONS: u32 = 240; // For reference only
+    const BASELINE_TIME_SECS: f32 = 8.77;
+
+    // Tolerance: allow 5% degradation for time
+    const TIME_TOLERANCE: f32 = 1.05;
+
+    // Load game from TOML
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // Configure for SAPCFR+ with 16-bit
+    game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
+    game.allocate_memory(true); // 16-bit mode
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("\n=== SAPCFR+ 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(
+        final_expl <= target_expl,
+        "Failed to reach target exploitability. Got: {}, Target: {}",
+        final_expl,
+        target_expl
+    );
+
+    // WARNING: Time should not increase significantly
+    assert!(
+        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
+        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
+        BASELINE_TIME_SECS,
+        time_secs,
+        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
+    );
+
+    // SUCCESS: Print if performance improved
+    if time_secs < BASELINE_TIME_SECS * 0.90 {
+        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+                 BASELINE_TIME_SECS - time_secs,
+                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+    }
+}
+
+// ============================================================================
+// BONUS TEST: Run all three and compare
+// ============================================================================
+
+#[test]
+#[ignore] // Use `cargo test --release --ignored -- --nocapture` to run
+fn test_compare_all_algorithms_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    println!("\n=== Comparing All Algorithms (16-bit) ===\n");
+
+    // Test DCFR
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+    game.set_cfr_algorithm(CfrAlgorithm::DCFR);
+    game.allocate_memory(true);
+    let start = Instant::now();
+    let dcfr_expl = solve(&mut game, max_iters, target_expl, true);
+    let dcfr_time = start.elapsed();
+
+    // Test DCFR+
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+    game.set_cfr_algorithm(CfrAlgorithm::DCRFPlus);
+    game.allocate_memory(true);
+    let start = Instant::now();
+    let dcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
+    let dcfrplus_time = start.elapsed();
+
+    // Test SAPCFR+
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+    game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
+    game.allocate_memory(true);
+    let start = Instant::now();
+    let sapcfr_expl = solve(&mut game, max_iters, target_expl, true);
+    let sapcfr_time = start.elapsed();
+
+    // Print comparison table
+    println!("\n┌─────────────┬──────────┬─────────────────┐");
+    println!("│ Algorithm   │ Time (s) │ Exploitability  │");
+    println!("├─────────────┼──────────┼─────────────────┤");
+    println!("│ DCFR        │ {:>8.2} │ {:>15.6} │",
+             dcfr_time.as_secs_f32(), dcfr_expl);
+    println!("│ DCFR+       │ {:>8.2} │ {:>15.6} │",
+             dcfrplus_time.as_secs_f32(), dcfrplus_expl);
+    println!("│ SAPCFR+     │ {:>8.2} │ {:>15.6} │",
+             sapcfr_time.as_secs_f32(), sapcfr_expl);
+    println!("└─────────────┴──────────┴─────────────────┘");
+
+    // All should reach target
+    assert!(dcfr_expl <= target_expl);
+    assert!(dcfrplus_expl <= target_expl);
+    assert!(sapcfr_expl <= target_expl);
+}
