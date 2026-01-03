@@ -279,18 +279,31 @@ fn solve_recursive<T: Game>(
             for action in node.action_indices() {
                 // Check if this action should be skipped (pruned)
                 let should_skip = if game.is_compression_enabled() {
-                    // Compressed mode: check avg regret across all hands for this action
-                    let regrets = node.regrets_compressed();
-                    let scale = node.regret_scale();
-                    let decoder = scale / i16::MAX as f32;
-                    let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
+                    if game.quantization_mode() == QuantizationMode::Int8 {
+                        let regrets = node.regrets_i8();
+                        let scale = node.regret_scale();
+                        let decoder = scale / i8::MAX as f32;
+                        let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
 
-                    // Calculate average regret for this action
-                    let avg_regret: f32 = action_regrets.iter()
-                        .map(|&r| r as f32 * decoder)
-                        .sum::<f32>() / num_hands as f32;
+                        let avg_regret: f32 = action_regrets.iter()
+                            .map(|&r| r as f32 * decoder)
+                            .sum::<f32>() / num_hands as f32;
 
-                    avg_regret < pruning_threshold
+                        avg_regret < pruning_threshold
+                    } else {
+                        // Compressed mode: check avg regret across all hands for this action
+                        let regrets = node.regrets_compressed();
+                        let scale = node.regret_scale();
+                        let decoder = scale / i16::MAX as f32;
+                        let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
+
+                        // Calculate average regret for this action
+                        let avg_regret: f32 = action_regrets.iter()
+                            .map(|&r| r as f32 * decoder)
+                            .sum::<f32>() / num_hands as f32;
+
+                        avg_regret < pruning_threshold
+                    }
                 } else {
                     // Float32 mode
                     let regrets = node.regrets();
@@ -340,14 +353,25 @@ fn solve_recursive<T: Game>(
              let mut predicted_regrets = Vec::with_capacity(num_actions * num_hands);
 
              if game.is_compression_enabled() {
-                 // Int16 quantization mode (come richiesto dall'utente)
-                 let predicted = node.prev_regrets_compressed();
-                 let scale = node.prev_regret_scale();
-                 let decode_factor = 1.0 / i16::MAX as f32;
+                 if game.quantization_mode() == QuantizationMode::Int8 {
+                     let predicted = node.prev_regrets_i8();
+                     let scale = node.prev_regret_scale();
+                     let decode_factor = 1.0 / i8::MAX as f32;
 
-                 for &r_pred in predicted.iter() {
-                     let v_pred = r_pred as f32 * scale * decode_factor;
-                     predicted_regrets.push(v_pred.max(0.0));
+                     for &r_pred in predicted.iter() {
+                         let v_pred = r_pred as f32 * scale * decode_factor;
+                         predicted_regrets.push(v_pred.max(0.0));
+                     }
+                 } else {
+                     // Int16 quantization mode (come richiesto dall'utente)
+                     let predicted = node.prev_regrets_compressed();
+                     let scale = node.prev_regret_scale();
+                     let decode_factor = 1.0 / i16::MAX as f32;
+
+                     for &r_pred in predicted.iter() {
+                         let v_pred = r_pred as f32 * scale * decode_factor;
+                         predicted_regrets.push(v_pred.max(0.0));
+                     }
                  }
              } else {
                  // Float32 mode (fallback)
@@ -363,6 +387,26 @@ fn solve_recursive<T: Game>(
              if game.is_compression_enabled() {
                  let quantization_mode = game.quantization_mode();
                  match quantization_mode {
+                     QuantizationMode::Int8 => {
+                         let implicit = node.regrets_i8();
+                         let prev = node.prev_regrets_i8();
+                         let scale_impl = node.regret_scale();
+                         let scale_prev = node.prev_regret_scale();
+                         let decode_factor = 1.0 / i8::MAX as f32;
+
+                         let num_elements = implicit.len();
+                         for i in 0..num_elements {
+                            let r_impl = implicit[i];
+                            let r_prev = prev[i];
+                            
+                            let v_impl = r_impl as f32 * scale_impl * decode_factor;
+                            let v_prev = r_prev as f32 * scale_prev * decode_factor;
+                            
+                            // Explicit = Implicit + 1/3 * Prev
+                            let explicit = v_impl + 0.33333333 * v_prev;
+                            explicit_regrets.push(explicit.max(0.0));
+                         }
+                     },
                      QuantizationMode::Int16 | QuantizationMode::Int16Log => {
                          let implicit = node.regrets_compressed();
                          let prev = node.prev_regrets_compressed();
@@ -423,6 +467,8 @@ fn solve_recursive<T: Game>(
         } else if game.is_compression_enabled() {
             if game.quantization_mode() == QuantizationMode::Int16Log {
                 regret_matching_compressed_log(node.regrets_compressed(), node.regret_scale(), num_actions)
+            } else if game.quantization_mode() == QuantizationMode::Int8 {
+                regret_matching_compressed_i8(node.regrets_i8(), num_actions)
             } else {
                 regret_matching_compressed(node.regrets_compressed(), num_actions)
             }
@@ -480,18 +526,171 @@ fn solve_recursive<T: Game>(
                 let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
                 node.set_strategy_scale(new_scale);
             }
+            8 => {
+                // 8-bit strategy mode (compressed)
+                let scale = node.strategy_scale();
+                let decoder = params.gamma_t * scale / u8::MAX as f32; // u8::MAX = 255
+                let cum_strategy = node.strategy_i8_mut();
+
+                strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
+                    *x += (*y as f32) * decoder;
+                });
+
+                if !locking.is_empty() {
+                    strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() {
+                            *d = 0.0;
+                        }
+                    })
+                }
+
+                let new_scale = encode_unsigned_strategy_u8(cum_strategy, &strategy);
+                node.set_strategy_scale(new_scale);
+            }
             _ => {
-                panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits());
+                panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits());
             }
         }
 
         // Update cumulative regrets - dispatch based on compression mode
         if game.is_compression_enabled() {
-            // update the cumulative regret
-            let scale = node.regret_scale();
-            let quantization_mode = game.quantization_mode();
+            let quantization_mode = game.quantization_mode(); // Defined once
 
-            if params.algorithm == CfrAlgorithm::PDCFRPlus {
+            if quantization_mode == QuantizationMode::Int8 {
+                 // --- INT8 IMPLEMENTATION ---
+                 let scale = node.regret_scale();
+                 let decoder = scale / i8::MAX as f32;
+
+                 if params.algorithm == CfrAlgorithm::PDCFRPlus {
+                     // PDCFR+ 8-bit
+                     let (cum_regret, predicted_regret) = node.regrets_and_prev_i8_mut();
+
+                     // 1. Decode cumulative regrets and compute instantaneous regrets
+                     let mut inst_regrets = Vec::with_capacity(cfv_actions.len());
+                     let mut cum_vals = Vec::with_capacity(cfv_actions.len());
+
+                     cfv_actions.iter().zip(&*cum_regret).for_each(|(&cfv, &r_cum)| {
+                         let val_cum = r_cum as f32 * decoder;
+                         cum_vals.push(val_cum);
+                         inst_regrets.push(cfv);
+                     });
+
+                     // 2. Subtract EV
+                     inst_regrets.chunks_exact_mut(num_hands).for_each(|row| {
+                         sub_slice(row, result);
+                     });
+
+                     // 3. Locking
+                     if !locking.is_empty() {
+                         inst_regrets.iter_mut().zip(locking).for_each(|(d, s)| {
+                             if s.is_sign_positive() { *d = 0.0; }
+                         })
+                     }
+
+                     // 4. Update
+                     let alpha = params.alpha_t;
+                     cum_vals.iter_mut().zip(&inst_regrets).for_each(|(reg_cum, &reg_inst)| {
+                         *reg_cum = (*reg_cum * alpha + reg_inst).max(0.0);
+                     });
+
+                     // 5. Predicted
+                     let t = (params.current_iteration + 1) as f64;
+                     let pow_alpha = t * t.sqrt();
+                     let next_discount = (pow_alpha / (pow_alpha + 1.0)) as f32;
+
+                     let mut predicted_vals = Vec::with_capacity(cum_vals.len());
+                     cum_vals.iter().zip(&inst_regrets).for_each(|(&reg_cum, &reg_inst)| {
+                         predicted_vals.push((reg_cum * next_discount + reg_inst).max(0.0));
+                     });
+
+                     // 6. Encode
+                     let new_scale_cum = encode_signed_i8(cum_regret, &cum_vals);
+                     let new_scale_pred = encode_signed_i8(predicted_regret, &predicted_vals);
+
+                     node.set_regret_scale(new_scale_cum);
+                     node.set_prev_regret_scale(new_scale_pred);
+
+                 } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+                     let (cum_regret, prev_regret) = node.regrets_and_prev_i8_mut();
+
+                     // 1. ADD Implicit
+                     cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                         let val_impl = *y as f32 * decoder;
+                         *x += val_impl;
+                     });
+
+                     // 2. Subtract EV
+                     cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
+                         sub_slice(row, result);
+                     });
+
+                     // 3. Locking
+                     if !locking.is_empty() {
+                         cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
+                             if s.is_sign_positive() { *d = 0.0; }
+                         })
+                     }
+
+                     // 4. Compute Prev & Clip Implicit
+                     let mut prev_vals = Vec::with_capacity(cfv_actions.len());
+                     cfv_actions.iter().zip(&*cum_regret).for_each(|(&sum_val, y)| {
+                         let val_impl = *y as f32 * decoder;
+                         prev_vals.push(sum_val - val_impl);
+                     });
+
+                     cfv_actions.iter_mut().for_each(|x| {
+                         if *x < 0.0 { *x = 0.0; }
+                     });
+
+                     // Encode
+                     let new_scale_prev = encode_signed_i8(prev_regret, &prev_vals);
+                     let new_scale = encode_signed_i8(cum_regret, &cfv_actions);
+
+                     node.set_prev_regret_scale(new_scale_prev);
+                     node.set_regret_scale(new_scale);
+                 } else {
+                     // DCFR / DCFR+
+                     let cum_regret = node.regrets_i8_mut();
+                     let (alpha, beta) = (params.alpha_t, params.beta_t);
+                     let can_use_dcfr_plus = params.algorithm == CfrAlgorithm::DCRFPlus;
+
+                     cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                         let real_prev = *y as f32 * decoder;
+                         let coef = if can_use_dcfr_plus {
+                             alpha
+                         } else if real_prev >= 0.0 {
+                              alpha
+                         } else {
+                              beta
+                         };
+                         *x += real_prev * coef;
+                     });
+
+                     cfv_actions.chunks_exact_mut(num_hands).for_each(|row| {
+                         sub_slice(row, result);
+                     });
+
+                     if !locking.is_empty() {
+                         cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
+                             if s.is_sign_positive() { *d = 0.0; }
+                         })
+                     }
+
+                     if can_use_dcfr_plus {
+                         cfv_actions.iter_mut().for_each(|x| {
+                             if *x < 0.0 { *x = 0.0; }
+                         });
+                     }
+
+                     let new_scale = encode_signed_i8(cum_regret, &cfv_actions);
+                     node.set_regret_scale(new_scale);
+                 }
+
+            } else {
+                // --- INT16 IMPLEMENTATION (Original) ---
+                let scale = node.regret_scale();
+
+                if params.algorithm == CfrAlgorithm::PDCFRPlus {
                 // PDCFR+ compressed mode
                 let (cum_regret, predicted_regret) = node.regrets_and_prev_compressed_mut();
                 let decoder = scale / i16::MAX as f32;
@@ -692,6 +891,7 @@ fn solve_recursive<T: Game>(
                 };
                 node.set_regret_scale(new_scale);
             }
+          }
         } else {
             // update the cumulative regret (uncompressed mode)
             let cum_regret = node.regrets_mut();
@@ -784,14 +984,25 @@ fn solve_recursive<T: Game>(
              let mut predicted_regrets = Vec::with_capacity(num_actions * node_num_hands);
 
              if game.is_compression_enabled() {
-                 // Int16 quantization mode
-                 let predicted = node.prev_regrets_compressed();
-                 let scale = node.prev_regret_scale();
-                 let decode_factor = 1.0 / i16::MAX as f32;
+                 if game.quantization_mode() == QuantizationMode::Int8 {
+                     let predicted = node.prev_regrets_i8();
+                     let scale = node.prev_regret_scale();
+                     let decode_factor = 1.0 / i8::MAX as f32;
 
-                 for &r_pred in predicted.iter() {
-                     let v_pred = r_pred as f32 * scale * decode_factor;
-                     predicted_regrets.push(v_pred.max(0.0));
+                     for &r_pred in predicted.iter() {
+                         let v_pred = r_pred as f32 * scale * decode_factor;
+                         predicted_regrets.push(v_pred.max(0.0));
+                     }
+                 } else {
+                     // Int16 quantization mode
+                     let predicted = node.prev_regrets_compressed();
+                     let scale = node.prev_regret_scale();
+                     let decode_factor = 1.0 / i16::MAX as f32;
+
+                     for &r_pred in predicted.iter() {
+                         let v_pred = r_pred as f32 * scale * decode_factor;
+                         predicted_regrets.push(v_pred.max(0.0));
+                     }
                  }
              } else {
                  // Float32 mode (fallback)
@@ -1035,6 +1246,46 @@ fn regret_matching_compressed_log(regret: &[i16], scale: f32, num_actions: usize
         };
         val.max(0.0)
     }));
+
+    let row_size = strategy.len() / num_actions;
+    let mut denom = Vec::with_capacity(row_size);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(row_size) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+/// Computes the strategy by regret-matching algorithm for 8-bit regrets.
+#[cfg(feature = "custom-alloc")]
+#[inline]
+fn regret_matching_compressed_i8(regret: &[i8], num_actions: usize) -> Vec<f32, StackAlloc> {
+    let mut strategy = Vec::with_capacity_in(regret.len(), StackAlloc);
+    strategy.extend(regret.iter().map(|&r| r.max(0) as f32));
+
+    let row_size = strategy.len() / num_actions;
+    let mut denom = Vec::with_capacity_in(row_size, StackAlloc);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(row_size) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+/// Computes the strategy by regret-matching algorithm for 8-bit regrets.
+#[cfg(not(feature = "custom-alloc"))]
+#[inline]
+fn regret_matching_compressed_i8(regret: &[i8], num_actions: usize) -> Vec<f32> {
+    let mut strategy = Vec::with_capacity(regret.len());
+    strategy.extend(regret.iter().map(|&r| r.max(0) as f32));
 
     let row_size = strategy.len() / num_actions;
     let mut denom = Vec::with_capacity(row_size);

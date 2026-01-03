@@ -85,6 +85,13 @@ pub enum QuantizationMode {
     /// Ideally suited for values with high dynamic range (like CFR+ regrets).
     #[cfg_attr(feature = "serde", serde(rename = "16bit-log"))]
     Int16Log,
+
+    /// Compressed precision: 8-bit signed integer (i8).
+    ///
+    /// This mode stores values as 8-bit integers with a floating-point scale factor.
+    /// It reduces memory usage by 75% compared to Float32.
+    #[cfg_attr(feature = "serde", serde(rename = "8bit"))]
+    Int8,
 }
 
 impl Default for QuantizationMode {
@@ -101,6 +108,7 @@ impl QuantizationMode {
         match self {
             Self::Float32 => 4,
             Self::Int16 | Self::Int16Log => 2,
+            Self::Int8 => 1,
         }
     }
 
@@ -110,6 +118,7 @@ impl QuantizationMode {
         match self {
             Self::Float32 => num_elements * 4,
             Self::Int16 | Self::Int16Log => num_elements * 2,
+            Self::Int8 => num_elements * 1,
         }
     }
 

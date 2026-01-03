@@ -500,4 +500,10 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns mutable references to both regrets and previous regrets (8-bit quantized).
+    /// Used to avoid borrow checker issues when accessing both simultaneously.
+    #[doc(hidden)]
+    fn regrets_and_prev_i8_mut(&mut self) -> (&mut [i8], &mut [i8]) {
+        unreachable!()
+    }
 }

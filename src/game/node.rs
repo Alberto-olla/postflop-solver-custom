@@ -312,6 +312,16 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
+    fn regrets_and_prev_i8_mut(&mut self) -> (&mut [i8], &mut [i8]) {
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut i8, self.num_elements as usize),
+                slice::from_raw_parts_mut(self.storage4 as *mut i8, self.num_elements as usize),
+            )
+        }
+    }
+
+    #[inline]
     fn enable_parallelization(&self) -> bool {
         self.river == NOT_DEALT
     }

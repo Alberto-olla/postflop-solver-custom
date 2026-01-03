@@ -469,13 +469,15 @@ impl PostFlopGame {
         let strategy_bytes_per_elem = match self.strategy_bits {
             32 => 4,  // f32
             16 => 2,  // u16
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", self.strategy_bits),
+            8 => 1,   // u8
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", self.strategy_bits),
         };
 
         let regret_bytes_per_elem = match self.regret_bits {
             32 => 4,  // f32
             16 => 2,  // i16
-            _ => panic!("Invalid regret_bits: {}. Valid values: 16, 32", self.regret_bits),
+            8 => 1,   // i8
+            _ => panic!("Invalid regret_bits: {}. Valid values: 8, 16, 32", self.regret_bits),
         };
 
         let ip_bytes_per_elem = match self.ip_bits {
@@ -509,7 +511,14 @@ impl PostFlopGame {
         // Use regret_bits as the representative quantization mode
         self.quantization_mode = match self.regret_bits {
             32 => QuantizationMode::Float32,
-            16 => QuantizationMode::Int16,
+            16 => {
+                if self.log_encoding_enabled {
+                    QuantizationMode::Int16Log
+                } else {
+                    QuantizationMode::Int16
+                }
+            },
+            8 => QuantizationMode::Int8,
             _ => QuantizationMode::Int16,
         };
 
@@ -653,11 +662,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            16 | 32 => {
+            16 | 32 | 8 => {
                 self.strategy_bits = bits;
             }
             _ => {
-                panic!("Invalid strategy_bits: {}. Valid values: 16, 32", bits);
+                panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", bits);
             }
         }
     }
@@ -711,11 +720,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            16 | 32 => {
+            16 | 32 | 8 => {
                 self.regret_bits = bits;
             }
             _ => {
-                panic!("Invalid regret_bits: {}. Valid values: 16, 32", bits);
+                panic!("Invalid regret_bits: {}. Valid values: 8, 16, 32", bits);
             }
         }
     }
