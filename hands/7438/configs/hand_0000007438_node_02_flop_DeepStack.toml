@@ -51,11 +51,11 @@ target_exploitability_pct = 0.5
 
 # Granular precision control
 strategy_bits = 16
-regret_bits = 16
+regret_bits = 8
 ip_bits = 16
 chance_bits = 16
 
-algorithm = "pdcfr+"
+algorithm = "dcfr+"
 enable_pruning = false
 lazy_normalization = false
 zstd_compression_level = 0

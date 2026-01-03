@@ -86,103 +86,37 @@ directory = "hands/7438/solved_games"
 
 Target: sotto 10 GB per permettere solving su macchine standard
 
-Using algorithm: DCFR (dual discount factors)
-Using 16-bit precision (compressed)
+Ottimizzazione: 
 
-Solving (max 1000 iterations)...
-
-iteration: 210 / 1000 (exploitability = 1.4992e1)
+DCFR
 [STOP] Reached target exploitability at iteration 210
 Current: 14.991928, Target: 15.000000
+Memory usage: 3494.19 MB
+Strategy:     1544.14 MB
+Regrets:      1544.14 MB
+IP CFVs:       134.42 MB
+Chance CFVs:     3.40 MB
+Misc:          268.09 MB
+✓ Solving completed in 136.57s
 
-
-
-✓ Solving completed in 134.52s
-
-Saving to: hands/7438/solved_games/hand_0000007438_node_02_flop_DeepStack-16.bin
-✓ Game saved successfully!
-
-File: hand_0000007438_node_02_flop_DeepStack-16.bin
-Size: 122.91 MB
-Compression: zstd level 0
-
-Using algorithm: DCFR (dual discount factors)
-Regret-based pruning: ENABLED (dynamic threshold)
-Using 16-bit precision (compressed)
-
-Solving (max 500 iterations)...
-
-iteration: 210 / 500 (exploitability = 1.4992e1)
-[STOP] Reached target exploitability at iteration 210
-Current: 14.991928, Target: 15.000000
-
-
-
-✓ Solving completed in 165.03s
-
-Saving to: hands/7438/solved_games/hand_0000007438_node_02_flop_DeepStack-16.bin
-✓ Game saved successfully!
-
-File: hand_0000007438_node_02_flop_DeepStack-16.bin
-Size: 122.91 MB
-Compression: zstd level 0
-
-Using algorithm: DCFR+ (single discount + clipping)
-Using 16-bit precision (compressed)
-
-Solving (max 500 iterations)...
-
-iteration: 160 / 500 (exploitability = 1.4716e1)
+DCFR+
 [STOP] Reached target exploitability at iteration 160
 Current: 14.715958, Target: 15.000000
+Memory usage: 3494.19 MB
+Strategy:     1544.14 MB
+Regrets:      1544.14 MB
+IP CFVs:       134.42 MB
+Chance CFVs:     3.40 MB
+Misc:          268.09 MB
+✓ Solving completed in 111.20s
 
-
-
-✓ Solving completed in 106.60s
-
-Saving to: hands/7438/solved_games/hand_0000007438_node_02_flop_DeepStack-16.bin
-✓ Game saved successfully!
-
-File: hand_0000007438_node_02_flop_DeepStack-16.bin
-Size: 125.05 MB
-Compression: zstd level 0
-
-Using algorithm: SAPCFR+ (asymmetric predictive CFR+)
-Using 16-bit precision (compressed)
-
-Solving (max 500 iterations)...
-
-iteration: 240 / 500 (exploitability = 1.4352e1)
-[STOP] Reached target exploitability at iteration 240
-Current: 14.352432, Target: 15.000000
-
-
-
-✓ Solving completed in 312.12s
-
-Saving to: hands/7438/solved_games/hand_0000007438_node_02_flop_DeepStack-16.bin
-✓ Game saved successfully!
-
-File: hand_0000007438_node_02_flop_DeepStack-16.bin
-Size: 134.21 MB
-Compression: zstd level 0
-
-Using algorithm: PDCFR+ (predictive discounted CFR+)
-Using 16-bit precision (compressed)
-
-Solving (max 500 iterations)...
-
-iteration: 440 / 500 (exploitability = 1.4421e1)
-[STOP] Reached target exploitability at iteration 440
-Current: 14.421402, Target: 15.000000
-
-
-
-✓ Solving completed in 585.68s
-
-Saving to: hands/7438/solved_games/hand_0000007438_node_02_flop_DeepStack-16.bin
-✓ Game saved successfully!
-
-File: hand_0000007438_node_02_flop_DeepStack-16.bin
-Size: 124.52 MB
-Compression: zstd level 0
+DCFR+, Regrets8bit
+[STOP] Reached target exploitability at iteration 230
+Current: 13.969757, Target: 15.000000
+Memory usage: 2722.12 MB
+Strategy:     1544.14 MB
+Regrets:       772.07 MB
+IP CFVs:       134.42 MB
+Chance CFVs:     3.40 MB
+Misc:          268.09 MB
+✓ Solving completed in 422.85s
