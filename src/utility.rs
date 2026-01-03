@@ -502,22 +502,20 @@ fn compute_cfvalue_recursive<T: Game>(
         // save the counterfactual values
         if save_cfvalues && node.cfvalue_storage_player() == Some(player) {
             let result = unsafe { &*(result as *const _ as *const [f32]) };
-            if game.is_compression_enabled() {
-                // Dispatch based on chance_bits precision
-                match game.chance_bits() {
-                    8 => {
-                        // 8-bit mode: use i8
-                        let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result);
-                        node.set_cfvalue_chance_scale(cfv_scale);
-                    }
-                    _ => {
-                        // 16-bit mode (default): use i16
-                        let cfv_scale = encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
-                        node.set_cfvalue_chance_scale(cfv_scale);
-                    }
+            // Dispatch based on chance_bits precision
+            match game.chance_bits() {
+                32 => {
+                    node.cfvalues_chance_mut().copy_from_slice(result);
                 }
-            } else {
-                node.cfvalues_chance_mut().copy_from_slice(result);
+                16 => {
+                    let cfv_scale = encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
+                    node.set_cfvalue_chance_scale(cfv_scale);
+                }
+                8 => {
+                    let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result);
+                    node.set_cfvalue_chance_scale(cfv_scale);
+                }
+                _ => panic!("Invalid chance_bits: {}. Valid values: 8, 16, 32", game.chance_bits()),
             }
         }
     }
@@ -537,24 +535,16 @@ fn compute_cfvalue_recursive<T: Game>(
 
         // obtain the strategy
         #[cfg(feature = "custom-alloc")]
-        let mut strategy = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy_custom_alloc(node.strategy(), num_actions)
+        let mut strategy = match game.strategy_bits() {
+            32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
-        let mut strategy = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy(node.strategy(), num_actions)
+        let mut strategy = match game.strategy_bits() {
+            32 => normalized_strategy(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
 
         // node-locking
@@ -568,11 +558,16 @@ fn compute_cfvalue_recursive<T: Game>(
 
         // save the counterfactual values
         if save_cfvalues {
-            if game.is_compression_enabled() {
-                let cfv_scale = encode_signed_slice(node.cfvalues_compressed_mut(), &cfv_actions);
-                node.set_cfvalue_scale(cfv_scale);
-            } else {
-                node.cfvalues_mut().copy_from_slice(&cfv_actions);
+            // Use regret_bits for standard CFValues (which share storage with regrets)
+            match game.regret_bits() {
+                32 => {
+                    node.cfvalues_mut().copy_from_slice(&cfv_actions);
+                }
+                16 => {
+                    let cfv_scale = encode_signed_slice(node.cfvalues_compressed_mut(), &cfv_actions);
+                    node.set_cfvalue_scale(cfv_scale);
+                }
+                _ => panic!("Invalid regret_bits (for cfvalues): {}. Valid values: 16, 32", game.regret_bits()),
             }
         }
     }
@@ -590,24 +585,16 @@ fn compute_cfvalue_recursive<T: Game>(
     } else {
         // obtain the strategy
         #[cfg(feature = "custom-alloc")]
-        let mut cfreach_actions = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy_custom_alloc(node.strategy(), num_actions)
+        let mut cfreach_actions = match game.strategy_bits() {
+            32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
-        let mut cfreach_actions = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy(node.strategy(), num_actions)
+        let mut cfreach_actions = match game.strategy_bits() {
+            32 => normalized_strategy(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
 
         // node-locking
@@ -641,11 +628,19 @@ fn compute_cfvalue_recursive<T: Game>(
     // save the counterfactual values for IP
     if save_cfvalues && node.has_cfvalues_ip() && player == 1 {
         let result = unsafe { &*(result as *const _ as *const [f32]) };
-        if game.is_compression_enabled() {
-            let cfv_scale = encode_signed_slice(node.cfvalues_ip_compressed_mut(), result);
-            node.set_cfvalue_ip_scale(cfv_scale);
-        } else {
-            node.cfvalues_ip_mut().copy_from_slice(result);
+        match game.ip_bits() {
+            32 => {
+                 node.cfvalues_ip_mut().copy_from_slice(result);
+            }
+            16 => {
+                 let cfv_scale = encode_signed_slice(node.cfvalues_ip_compressed_mut(), result);
+                 node.set_cfvalue_ip_scale(cfv_scale);
+            }
+            8 => {
+                 let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result);
+                 node.set_cfvalue_ip_scale(cfv_scale);
+            }
+            _ => panic!("Invalid ip_bits: {}. Valid values: 8, 16, 32", game.ip_bits()),
         }
     }
 }
@@ -767,24 +762,16 @@ fn compute_best_cfv_recursive<T: Game>(
     else {
         // obtain the strategy
         #[cfg(feature = "custom-alloc")]
-        let mut cfreach_actions = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy_custom_alloc(node.strategy(), num_actions)
+        let mut cfreach_actions = match game.strategy_bits() {
+            32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
-        let mut cfreach_actions = if game.is_compression_enabled() {
-            match game.strategy_bits() {
-                32 => normalized_strategy(node.strategy(), num_actions),
-                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
-            }
-        } else {
-            normalized_strategy(node.strategy(), num_actions)
+        let mut cfreach_actions = match game.strategy_bits() {
+            32 => normalized_strategy(node.strategy(), num_actions),
+            16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+            _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
         };
 
         // node-locking

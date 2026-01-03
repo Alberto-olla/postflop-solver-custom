@@ -114,6 +114,21 @@ pub trait Game: Send + Sync {
         16  // Default: same as quantization mode
     }
 
+    /// Returns the regret precision in bits (32 or 16).
+    #[doc(hidden)]
+    fn regret_bits(&self) -> u8 {
+        match self.quantization_mode() {
+            crate::quantization::QuantizationMode::Float32 => 32,
+            _ => 16,
+        }
+    }
+
+    /// Returns the IP cfvalues precision in bits (32, 16, or 8).
+    #[doc(hidden)]
+    fn ip_bits(&self) -> u8 {
+        32
+    }
+
     /// Returns the CFR algorithm variant.
     #[doc(hidden)]
     fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
