@@ -50,8 +50,8 @@ max_iterations = 5500
 target_exploitability_pct = 0.5
 
 # Granular precision control
-strategy_bits = 8
-regret_bits = 16
+strategy_bits = 16
+regret_bits = 8
 ip_bits = 8
 chance_bits = 8
 

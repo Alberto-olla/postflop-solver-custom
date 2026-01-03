@@ -255,8 +255,8 @@ pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 
     let encoder = u8::MAX as f32 / scale_nonzero;
     dst.iter_mut().zip(slice).for_each(|(d, s)| {
         let s_safe = if s.is_finite() { *s } else { 0.0 };
-        let value = (s_safe * encoder + 0.49999997).min(u8::MAX as f32).max(0.0);
-        *d = unsafe { value.to_int_unchecked::<i32>() as u8 }
+        let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
+        *d = stochastic_round(scaled) as u8;
     });
     scale
 }
