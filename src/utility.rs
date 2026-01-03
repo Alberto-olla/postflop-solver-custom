@@ -218,11 +218,16 @@ pub(crate) fn encode_signed_slice(dst: &mut [i16], slice: &[f32]) -> f32 {
 #[inline]
 pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
     let scale = slice_nonnegative_max(slice);
+    // Handle NaN/Inf gracefully
+    let scale = if scale.is_finite() { scale } else { 0.0 };
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = u16::MAX as f32 / scale_nonzero;
     // note: 0.49999997 + 0.49999997 = 0.99999994 < 1.0 | 0.5 + 0.49999997 = 1.0
     dst.iter_mut().zip(slice).for_each(|(d, s)| {
-        *d = unsafe { (s * encoder + 0.49999997).to_int_unchecked::<i32>() as u16 }
+        // Clamp to avoid overflow/UB from floating point errors and handle NaN
+        let s_safe = if s.is_finite() { *s } else { 0.0 };
+        let value = (s_safe * encoder + 0.49999997).min(u16::MAX as f32).max(0.0);
+        *d = unsafe { value.to_int_unchecked::<i32>() as u16 }
     });
     scale
 }
@@ -257,42 +262,6 @@ pub(crate) fn encode_signed_slice_log(dst: &mut [i16], slice: &[f32]) -> f32 {
 }
 
 
-/// Encodes the `f32` slice to the `u8` slice for strategy, and returns the scale.
-/// Uses unsigned quantization with stochastic rounding: maps [0, max] to [0, 255].
-///
-/// Stochastic rounding prevents the "vanishing update" problem when accumulating
-/// strategies over many iterations. Instead of deterministic rounding, we round
-/// up or down probabilistically based on the fractional part, preserving the
-/// expected value even when updates become smaller than the quantization step.
-#[inline]
-pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 {
-    use rand::Rng;
-
-    let scale = slice_nonnegative_max(slice);
-    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
-    let encoder = u8::MAX as f32 / scale_nonzero;
-
-    // Use thread-local RNG for performance
-    let mut rng = rand::thread_rng();
-
-    dst.iter_mut().zip(slice).for_each(|(d, s)| {
-        let val = s * encoder;
-        let integer_part = val.floor();
-        let fractional_part = val - integer_part;
-
-        // Stochastic rounding: round up with probability = fractional_part
-        let quantized = if rng.gen::<f32>() < fractional_part {
-            (integer_part + 1.0).min(255.0)
-        } else {
-            integer_part
-        };
-
-        *d = unsafe { quantized.to_int_unchecked::<u8>() };
-    });
-
-    scale
-}
-
 
 /// Encodes the `f32` slice to the `i8` slice for signed values (e.g., cfvalues_chance), and returns the scale.
 /// Uses signed quantization: maps [-max_abs, max_abs] to [-127, 127].
@@ -318,59 +287,6 @@ pub(crate) fn decode_signed_i8(src: &[i8], scale: f32) -> Vec<f32> {
     let decoder = scale / i8::MAX as f32;
     src.iter().map(|&x| x as f32 * decoder).collect()
 }
-
-/// Encodes the `f32` slice to 4-bit nibbles (packed in `u8` array) for strategy, and returns the scale.
-/// Uses unsigned quantization with stochastic rounding: maps [0, max] to [0, 15].
-/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
-///
-/// Stochastic rounding prevents the "vanishing update" problem when accumulating
-/// strategies over many iterations.
-#[inline]
-pub(crate) fn encode_unsigned_strategy_u4(dst: &mut [u8], slice: &[f32]) -> f32 {
-    use rand::Rng;
-
-    let scale = slice_nonnegative_max(slice);
-    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
-    let encoder = 15.0 / scale_nonzero;  // 4-bit max value is 15
-
-    // Use thread-local RNG for performance
-    let mut rng = rand::thread_rng();
-
-    // Process in pairs to avoid read-modify-write on the same byte
-    let chunks = slice.chunks(2);
-    for (byte_idx, chunk) in chunks.enumerate() {
-        // Element 0 (Low Nibble)
-        let val0 = chunk[0] * encoder;
-        let int0 = val0.floor();
-        let q0 = if rng.gen::<f32>() < (val0 - int0) {
-            (int0 + 1.0).min(15.0)
-        } else {
-            int0
-        };
-        let nibble0 = unsafe { q0.to_int_unchecked::<u8>() };
-
-        // Element 1 (High Nibble) - if exists
-        let nibble1 = if let Some(&val1) = chunk.get(1) {
-            let val1 = val1 * encoder;
-            let int1 = val1.floor();
-            let q1 = if rng.gen::<f32>() < (val1 - int1) {
-                (int1 + 1.0).min(15.0)
-            } else {
-                int1
-            };
-            unsafe { q1.to_int_unchecked::<u8>() }
-        } else {
-            0  // Padding for last element if odd
-        };
-
-        // Clean write: overwrites entire byte
-        // (Resolves potential dirty memory issues)
-        dst[byte_idx] = (nibble1 << 4) | (nibble0 & 0x0F);
-    }
-
-    scale
-}
-
 
 /// Applies the given swap to the given slice.
 #[inline]
@@ -623,9 +539,9 @@ fn compute_cfvalue_recursive<T: Game>(
         #[cfg(feature = "custom-alloc")]
         let mut strategy = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy_custom_alloc(node.strategy(), num_actions)
@@ -633,9 +549,9 @@ fn compute_cfvalue_recursive<T: Game>(
         #[cfg(not(feature = "custom-alloc"))]
         let mut strategy = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy(node.strategy(), num_actions)
@@ -673,15 +589,12 @@ fn compute_cfvalue_recursive<T: Game>(
         );
     } else {
         // obtain the strategy
-        // Note: for 4-bit mode, we need the number of hands for the node's player (opponent), not the current player
-        let node_num_hands = game.num_private_hands(node.player());
-
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy_custom_alloc(node.strategy(), num_actions)
@@ -689,9 +602,9 @@ fn compute_cfvalue_recursive<T: Game>(
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy(node.strategy(), num_actions)
@@ -853,15 +766,12 @@ fn compute_best_cfv_recursive<T: Game>(
     // opponent node
     else {
         // obtain the strategy
-        // Note: for 4-bit mode, we need the number of hands for the node's player (opponent), not the current player
-        let node_num_hands = game.num_private_hands(node.player());
-
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy_custom_alloc(node.strategy(), num_actions)
@@ -869,9 +779,9 @@ fn compute_best_cfv_recursive<T: Game>(
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = if game.is_compression_enabled() {
             match game.strategy_bits() {
-                8 => normalized_strategy_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_u4(node.strategy_i4_packed(), node_num_hands * num_actions, num_actions),
-                _ => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                32 => normalized_strategy(node.strategy(), num_actions),
+                16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits()),
             }
         } else {
             normalized_strategy(node.strategy(), num_actions)
@@ -991,62 +901,6 @@ pub(crate) fn normalized_strategy_compressed(strategy: &[u16], num_actions: usiz
     unsafe { normalized.set_len(strategy.len()) };
 
     let row_size = strategy.len() / num_actions;
-    let mut denom = Vec::with_capacity(row_size);
-    sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
-    unsafe { denom.set_len(row_size) };
-
-    let default = 1.0 / num_actions as f32;
-    normalized.chunks_exact_mut(row_size).for_each(|row| {
-        div_slice(row, &denom, default);
-    });
-
-    normalized
-}
-
-/// Computes normalized strategy from u8 cumulative values (8-bit mixed precision).
-#[inline]
-pub(crate) fn normalized_strategy_u8(strategy: &[u8], num_actions: usize) -> Vec<f32> {
-    let mut normalized = Vec::with_capacity(strategy.len());
-    let uninit = normalized.spare_capacity_mut();
-
-    uninit.iter_mut().zip(strategy).for_each(|(n, s)| {
-        n.write(*s as f32);
-    });
-    unsafe { normalized.set_len(strategy.len()) };
-
-    let row_size = strategy.len() / num_actions;
-    let mut denom = Vec::with_capacity(row_size);
-    sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
-    unsafe { denom.set_len(row_size) };
-
-    let default = 1.0 / num_actions as f32;
-    normalized.chunks_exact_mut(row_size).for_each(|row| {
-        div_slice(row, &denom, default);
-    });
-
-    normalized
-}
-
-/// Computes normalized strategy from 4-bit nibble packed values (4-bit mixed precision).
-/// Two 4-bit values are packed per byte: low nibble (bits 0-3) and high nibble (bits 4-7).
-#[inline]
-pub(crate) fn normalized_strategy_u4(strategy_packed: &[u8], num_elements: usize, num_actions: usize) -> Vec<f32> {
-    let mut normalized = Vec::with_capacity(num_elements);
-
-    // Unpack nibbles to f32
-    for i in 0..num_elements {
-        let byte_idx = i / 2;
-        let nibble = if i % 2 == 0 {
-            // Low nibble (even index)
-            strategy_packed[byte_idx] & 0x0F
-        } else {
-            // High nibble (odd index)
-            (strategy_packed[byte_idx] >> 4) & 0x0F
-        };
-        normalized.push(nibble as f32);
-    }
-
-    let row_size = num_elements / num_actions;
     let mut denom = Vec::with_capacity(row_size);
     sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
     unsafe { denom.set_len(row_size) };

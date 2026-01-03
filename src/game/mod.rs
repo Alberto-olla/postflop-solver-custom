@@ -84,12 +84,18 @@ pub struct PostFlopGame {
     storage_mode: BoardState,
     target_storage_mode: BoardState,
     num_nodes: [u64; 3],
-    quantization_mode: QuantizationMode,
-    strategy_bits: u8,  // Mixed precision: strategy precision (16, 8, or 4 bits)
-    chance_bits: u8,    // Mixed precision: chance cfvalues precision (16 or 8 bits)
+    // Granular precision control for each storage component
+    strategy_bits: u8,  // storage1: strategy precision (8, 16, or 32 bits)
+    regret_bits: u8,    // storage2/4: regret precision (16 or 32 bits)
+    ip_bits: u8,        // storage_ip: IP cfvalues precision (16 or 32 bits)
+    chance_bits: u8,    // storage_chance: chance cfvalues precision (8, 16, or 32 bits)
     lazy_normalization_enabled: bool,
     lazy_normalization_freq: u32,
-    log_encoding_enabled: bool,  // Signed magnitude biasing for regrets (16-bit only)
+    // DEPRECATED/EXPERIMENTAL: Legacy features not in active use
+    #[allow(dead_code)]
+    quantization_mode: QuantizationMode,  // DEPRECATED: Use *_bits parameters instead
+    #[allow(dead_code)]
+    log_encoding_enabled: bool,  // EXPERIMENTAL: Logarithmic encoding (not in active use)
     cfr_algorithm: crate::solver::CfrAlgorithm,
     enable_pruning: bool,  // Dynamic regret-based pruning (branch skipping)
     num_storage: u64,

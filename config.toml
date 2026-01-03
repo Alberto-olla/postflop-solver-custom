@@ -55,11 +55,47 @@ ip_raise = "standard"
 [solver]
 max_iterations = 1000
 target_exploitability_pct = 0.5  # 0.5% of the pot
-use_compression = false  # false = 32-bit float, true = 16-bit integer
+
+# ============================================================================
+# GRANULAR PRECISION CONTROL - Configure each storage component separately
+# ============================================================================
+# Each storage component can be configured independently for optimal memory/precision tradeoff
+#
+# strategy_bits:  Strategy storage (storage1)         - Options: 8, 16, 32
+# regret_bits:    Regret storage (storage2/4)         - Options: 16, 32
+# ip_bits:        IP CFValues storage (storage_ip)    - Options: 16, 32
+# chance_bits:    Chance CFValues storage             - Options: 8, 16, 32
+#
+# Recommended configurations:
+# - Balanced (default):     strategy=16, regret=16, ip=16, chance=16  (~50% memory vs 32-bit)
+# - Ultra-compressed:       strategy=8,  regret=16, ip=16, chance=8   (~62.5% memory saving)
+# - Full precision:         strategy=32, regret=32, ip=32, chance=32  (baseline, max precision)
+# - High precision IP:      strategy=16, regret=16, ip=32, chance=16  (more precision for IP player)
+# ============================================================================
+strategy_bits = 16
+regret_bits = 16
+ip_bits = 16
+chance_bits = 16
+
+# Algorithm: "dcfr", "dcfr+", "pdcfr+", "sapcfr+"
+# Note: pdcfr+ and sapcfr+ require 50% more memory (storage4)
+algorithm = "dcfr"
+
+# Enable regret-based pruning (dynamic branch skipping)
+# Works best with algorithm = "dcfr"
+enable_pruning = false
+
+# Lazy normalization (optional, can improve performance)
+lazy_normalization = false
+# lazy_normalization_freq = 0  # 0 = normalize only at finalization, N = every N iterations
+
 zstd_compression_level = 3  # Optional: 1-22 (3=default, 22=max), omit for no compression
 # dry_run = true  # true = mostra solo dimensione tree, false = risolve (default)
 
 [output]
 directory = "solved_games"
-# Output filename pattern: {ip_range}-{board}-{bits}.bin
-# Example: "KK-Td9d6hQc-32.bin"
+# Output filename pattern: {config_name}-{precision}.bin
+# Examples:
+#   Standard 16-bit: "config-16.bin"
+#   Full 32-bit: "config-32.bin"
+#   Mixed precision: "config-s16r16i32c16.bin" (strategy=16, regret=16, ip=32, chance=16)

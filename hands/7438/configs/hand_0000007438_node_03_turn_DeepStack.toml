@@ -48,9 +48,16 @@ ip_raise = "full"
 [solver]
 max_iterations = 500
 target_exploitability_pct = 0.5
-quantization = "16bit"
+
+# Granular precision control
+strategy_bits = 16
+regret_bits = 32
+ip_bits = 16
+chance_bits = 16
+
 algorithm = "dcfr" # dcfr and dcfr+ also work sapcfr+ pdcfr+
-enable_pruning= false
+enable_pruning = false
+lazy_normalization = false
 zstd_compression_level = 0
 dry_run = false
 

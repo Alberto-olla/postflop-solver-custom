@@ -65,21 +65,36 @@ impl PostFlopGame {
             return [0; 4];
         }
 
-        let regrets_bytes = self.quantization_mode.bytes_per_element();
-
-        // Strategy bytes may be different in mixed precision mode
-        let strategy_bytes = if self.quantization_mode == QuantizationMode::Int16 {
-            match self.strategy_bits {
-                16 => 2,  // u16
-                8 => 1,   // u8
-                4 => 1,   // nibbles (will be handled specially below)
-                _ => 2,
-            }
-        } else {
-            regrets_bytes  // Float32 mode: same as regrets
+        // Determine bytes per element for each storage based on *_bits settings
+        let strategy_bytes = match self.strategy_bits {
+            32 => 4,
+            16 => 2,
+            8 => 1,
+            4 => 1,  // nibbles (will be handled specially below)
+            _ => 2,
         };
 
-        let is_nibble_mode = self.quantization_mode == QuantizationMode::Int16 && self.strategy_bits == 4;
+        let regrets_bytes = match self.regret_bits {
+            32 => 4,
+            16 => 2,
+            _ => 2,
+        };
+
+        let ip_bytes = match self.ip_bits {
+            32 => 4,
+            16 => 2,
+            8 => 1,
+            _ => 2,
+        };
+
+        let chance_bytes = match self.chance_bits {
+            32 => 4,
+            16 => 2,
+            8 => 1,
+            _ => 2,
+        };
+
+        let is_nibble_mode = self.strategy_bits == 4;
 
         if self.target_storage_mode == BoardState::River {
             // omit storing the counterfactual values
@@ -114,14 +129,14 @@ impl PostFlopGame {
                 };
 
                 let len_regrets = regrets_bytes * node.num_elements as usize;
-                let len_ip = regrets_bytes * node.num_elements_ip as usize;
+                let len_ip = ip_bytes * node.num_elements_ip as usize;
                 num_storage[0] = offset_strategy as usize + len_strategy;
                 num_storage[1] = offset_regrets as usize + len_regrets;
                 num_storage[2] = offset_ip as usize + len_ip;
             }
             if num_storage[3] == 0 && node.is_chance() {
                 let offset = unsafe { node.storage1.offset_from(self.storage_chance.as_ptr()) };
-                let len = regrets_bytes * node.num_elements as usize;
+                let len = chance_bytes * node.num_elements as usize;
                 num_storage[3] = offset as usize + len;
             }
         }

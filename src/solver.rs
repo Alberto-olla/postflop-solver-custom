@@ -104,6 +104,7 @@ pub fn solve<T: Game>(
             if print_progress {
                 println!("\n[STOP] Reached target exploitability at iteration {}", t);
                 println!("       Current: {:.6}, Target: {:.6}", exploitability, target_exploitability);
+                println!("       Memory usage: {:.2} MB", game.memory_usage_mb());
                 io::stdout().flush().unwrap();
             }
             break;
@@ -438,85 +439,54 @@ fn solve_recursive<T: Game>(
         unsafe { cfv_actions.set_len(num_actions * num_hands) };
         let result = fma_slices_uninit(result, &strategy, &cfv_actions);
 
-        if game.is_compression_enabled() {
-            // Update cumulative strategy - dispatch based on precision
-            match (game.quantization_mode(), game.strategy_bits()) {
-                (QuantizationMode::Int16, 8) => {
-                    // 8-bit strategy mode (mixed precision)
-                    let scale = node.strategy_scale();
-                    let decoder = params.gamma_t * scale / u8::MAX as f32;
-                    let cum_strategy_u8 = node.strategy_u8_mut();
+        // Update cumulative strategy - dispatch based on strategy_bits (independent of regret compression)
+        match game.strategy_bits() {
+            32 => {
+                // 32-bit strategy mode (full precision)
+                let cum_strategy = node.strategy_mut();
 
-                    strategy.iter_mut().zip(&*cum_strategy_u8).for_each(|(x, y)| {
-                        *x += (*y as f32) * decoder;
-                    });
+                strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
+                    *x += *y * params.gamma_t;
+                });
 
-                    if !locking.is_empty() {
-                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
-                            if s.is_sign_positive() {
-                                *d = 0.0;
-                            }
-                        })
-                    }
-
-                    let new_scale = encode_unsigned_strategy_u8(cum_strategy_u8, &strategy);
-                    node.set_strategy_scale(new_scale);
+                if !locking.is_empty() {
+                    strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() {
+                            *d = 0.0;
+                        }
+                    })
                 }
-                (QuantizationMode::Int16, 16) | (QuantizationMode::Int16Log, 16) | (QuantizationMode::Float32, _) => {
-                    // Normal 16-bit mode (or 32-bit mode)
-                    let scale = node.strategy_scale();
-                    let decoder = params.gamma_t * scale / u16::MAX as f32;
-                    let cum_strategy = node.strategy_compressed_mut();
 
-                    strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
-                        *x += (*y as f32) * decoder;
-                    });
-
-                    if !locking.is_empty() {
-                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
-                            if s.is_sign_positive() {
-                                *d = 0.0;
-                            }
-                        })
-                    }
-
-                    let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
-                    node.set_strategy_scale(new_scale);
-                }
-                (QuantizationMode::Int16, 4) => {
-                    // 4-bit strategy mode (nibble packing)
-                    let scale = node.strategy_scale();
-                    let decoder = params.gamma_t * scale / 15.0;  // 4-bit max value is 15
-                    let cum_strategy_u4 = node.strategy_i4_packed_mut();
-                    let num_elements = strategy.len();
-
-                    // Decode nibbles and accumulate
-                    for i in 0..num_elements {
-                        let byte_idx = i / 2;
-                        let nibble = if i % 2 == 0 {
-                            cum_strategy_u4[byte_idx] & 0x0F
-                        } else {
-                            (cum_strategy_u4[byte_idx] >> 4) & 0x0F
-                        };
-                        strategy[i] += (nibble as f32) * decoder;
-                    }
-
-                    if !locking.is_empty() {
-                        strategy.iter_mut().zip(locking).for_each(|(d, s)| {
-                            if s.is_sign_positive() {
-                                *d = 0.0;
-                            }
-                        })
-                    }
-
-                    let new_scale = encode_unsigned_strategy_u4(cum_strategy_u4, &strategy);
-                    node.set_strategy_scale(new_scale);
-                }
-                _ => {
-                    panic!("Invalid quantization/strategy_bits combination");
-                }
+                cum_strategy.copy_from_slice(&strategy);
             }
+            16 => {
+                // 16-bit strategy mode (compressed)
+                let scale = node.strategy_scale();
+                let decoder = params.gamma_t * scale / u16::MAX as f32;
+                let cum_strategy = node.strategy_compressed_mut();
 
+                strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
+                    *x += (*y as f32) * decoder;
+                });
+
+                if !locking.is_empty() {
+                    strategy.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() {
+                            *d = 0.0;
+                        }
+                    })
+                }
+
+                let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
+                node.set_strategy_scale(new_scale);
+            }
+            _ => {
+                panic!("Invalid strategy_bits: {}. Valid values: 16, 32", game.strategy_bits());
+            }
+        }
+
+        // Update cumulative regrets - dispatch based on compression mode
+        if game.is_compression_enabled() {
             // update the cumulative regret
             let scale = node.regret_scale();
             let quantization_mode = game.quantization_mode();
@@ -723,14 +693,7 @@ fn solve_recursive<T: Game>(
                 node.set_regret_scale(new_scale);
             }
         } else {
-            // update the cumulative strategy
-            let gamma = params.gamma_t;
-            let cum_strategy = node.strategy_mut();
-            cum_strategy.iter_mut().zip(&strategy).for_each(|(x, y)| {
-                *x = *x * gamma + *y;
-            });
-
-            // update the cumulative regret
+            // update the cumulative regret (uncompressed mode)
             let cum_regret = node.regrets_mut();
             match params.algorithm {
                 CfrAlgorithm::DCFR => {

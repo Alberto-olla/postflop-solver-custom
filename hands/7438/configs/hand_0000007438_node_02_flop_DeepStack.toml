@@ -46,11 +46,18 @@ ip_bet = "medium"
 ip_raise = "minimal"
 
 [solver]
-max_iterations = 1000
+max_iterations = 500
 target_exploitability_pct = 0.5
-quantization = "16bit"
-algorithm = "dcfr"
-enable_pruning= false
+
+# Granular precision control
+strategy_bits = 16
+regret_bits = 16
+ip_bits = 16
+chance_bits = 16
+
+algorithm = "pdcfr+"
+enable_pruning = false
+lazy_normalization = false
 zstd_compression_level = 0
 dry_run = false
 

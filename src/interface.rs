@@ -131,6 +131,15 @@ pub trait Game: Send + Sync {
     fn tree_config(&self) -> &crate::action_tree::TreeConfig {
         unreachable!()
     }
+
+    /// Returns the current memory usage in megabytes.
+    ///
+    /// This includes all storage arrays (strategy, regrets, cfvalues).
+    /// Default implementation returns 0.0 for compatibility.
+    #[doc(hidden)]
+    fn memory_usage_mb(&self) -> f64 {
+        0.0
+    }
 }
 
 /// The trait representing a node in game tree.
@@ -230,18 +239,6 @@ pub trait GameNode: Send + Sync {
     /// Returns the mutable reference to the compressed strategy.
     #[doc(hidden)]
     fn strategy_compressed_mut(&mut self) -> &mut [u16] {
-        unreachable!()
-    }
-
-    /// Returns strategy as u8 slice (8-bit mixed precision mode).
-    #[doc(hidden)]
-    fn strategy_u8(&self) -> &[u8] {
-        unreachable!()
-    }
-
-    /// Returns mutable strategy as u8 slice (8-bit mixed precision mode).
-    #[doc(hidden)]
-    fn strategy_u8_mut(&mut self) -> &mut [u8] {
         unreachable!()
     }
 
@@ -351,31 +348,6 @@ pub trait GameNode: Send + Sync {
     /// Returns the mutable reference to the 8-bit quantized buffer for counterfactual values.
     #[doc(hidden)]
     fn cfvalues_chance_i8_mut(&mut self) -> &mut [i8] {
-        unreachable!()
-    }
-
-    // 4-bit quantization methods (bit-packed)
-    /// Returns the 4-bit quantized strategy (packed, 2 values per byte).
-    #[doc(hidden)]
-    fn strategy_i4_packed(&self) -> &[u8] {
-        unreachable!()
-    }
-
-    /// Returns the mutable reference to the 4-bit quantized strategy (packed).
-    #[doc(hidden)]
-    fn strategy_i4_packed_mut(&mut self) -> &mut [u8] {
-        unreachable!()
-    }
-
-    /// Returns the 4-bit quantized regrets (packed, 2 values per byte).
-    #[doc(hidden)]
-    fn regrets_i4_packed(&self) -> &[u8] {
-        unreachable!()
-    }
-
-    /// Returns the mutable reference to the 4-bit quantized regrets (packed).
-    #[doc(hidden)]
-    fn regrets_i4_packed_mut(&mut self) -> &mut [u8] {
         unreachable!()
     }
 
@@ -513,15 +485,4 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
-    /// Returns the 4-bit quantized previous instantaneous regrets (packed).
-    #[doc(hidden)]
-    fn prev_regrets_i4_packed(&self) -> &[u8] {
-        unreachable!()
-    }
-
-    /// Returns the mutable reference to the 4-bit quantized previous instantaneous regrets (packed).
-    #[doc(hidden)]
-    fn prev_regrets_i4_packed_mut(&mut self) -> &mut [u8] {
-        unreachable!()
-    }
 }

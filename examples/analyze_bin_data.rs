@@ -69,50 +69,13 @@ fn main() {
                 println!("   ✓ FORTEMENTE RACCOMANDATO");
                 println!("   ✓ GIÀ IMPLEMENTATO - basta cambiare config TOML");
 
-                println!("\n2. MIXED PRECISION (quantization = \"16bit\" + strategy_bits = 8):");
-                println!("   Attuale (Float32): {} MB", current_bytes as f64 / 1_048_576.0);
-                println!("   Con 8-bit strategy: {} MB", with_8bit as f64 / 1_048_576.0);
-                println!("   Risparmio: {} MB ({:.1}%)",
-                         saving_8bit as f64 / 1_048_576.0,
-                         saving_8bit as f64 / current_bytes as f64 * 100.0);
-                println!("   ✓ MASSIMO RISPARMIO");
-                println!("   ✓ GIÀ IMPLEMENTATO - basta cambiare config TOML");
-
-            } else {
-                // Caso Int16
-                let current_strategy_bytes = if game.strategy_bits() == 16 {
-                    total_elements_estimate * 2
-                } else {
-                    total_elements_estimate * 1
-                };
-                let current_regrets_bytes = total_elements_estimate * 2;
-                let current_total = current_strategy_bytes + current_regrets_bytes;
-
-                let with_8bit_strategy = total_elements_estimate * 1;
-                let with_8bit_total = with_8bit_strategy + current_regrets_bytes;
-
-                let saving_bytes = current_total - with_8bit_total;
-                let saving_pct = saving_bytes as f64 / current_total as f64 * 100.0;
-
-                println!("\n1. MIXED PRECISION (strategy_bits = 8):");
-                println!("   Attuale: {} MB strategy + {} MB regrets = {} MB",
-                         current_strategy_bytes as f64 / 1_048_576.0,
-                         current_regrets_bytes as f64 / 1_048_576.0,
-                         current_total as f64 / 1_048_576.0);
-                println!("   Con 8-bit: {} MB strategy + {} MB regrets = {} MB",
-                         with_8bit_strategy as f64 / 1_048_576.0,
-                         current_regrets_bytes as f64 / 1_048_576.0,
-                         with_8bit_total as f64 / 1_048_576.0);
-                println!("   Risparmio: {} MB ({:.1}%)",
-                         saving_bytes as f64 / 1_048_576.0, saving_pct);
-                println!("   ✓ GIÀ IMPLEMENTATO nella tua codebase!");
             }
             
             println!("\n2. QUANTIZZAZIONE LINEARE:");
-            println!("   ✓ GIÀ IMPLEMENTATA (encode_unsigned_strategy_u8)");
-            println!("   - Formula: quantized = round(value * 255 / max)");
-            println!("   - Precisione: ~0.39% (1/255)");
-            
+            println!("   ✓ GIÀ IMPLEMENTATA per 16-bit");
+            println!("   - Formula: quantized = round(value * 65535 / max)");
+            println!("   - Precisione: ~0.0015% (1/65535)");
+
             println!("\n3. DELTA ENCODING:");
             println!("   Applicabilità: BASSA");
             println!("   - Le strategie sono probabilità normalizzate, non sequenze temporali");
@@ -128,13 +91,6 @@ fn main() {
             println!("   Applicabilità: BASSA");
             println!("   - Le strategie sono già normalizzate (0-1)");
             println!("   - La quantizzazione lineare è più efficiente");
-            
-            println!("\n6. MINI-FLOATS (8-bit):");
-            println!("   Applicabilità: MEDIA");
-            println!("   - Utile per range dinamico molto ampio");
-            println!("   - Le strategie hanno range limitato (0-1)");
-            println!("   - Complessità implementativa alta");
-            println!("   ✗ NON NECESSARIO per questo caso d'uso");
             
             println!("\n=== RACCOMANDAZIONI FINALI ===");
 

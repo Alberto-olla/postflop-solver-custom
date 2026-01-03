@@ -67,20 +67,6 @@ struct StreetBetSizes {
 struct SolverSettings {
     max_iterations: usize,
     target_exploitability_pct: f32,
-    /// Legacy field: use `quantization` instead. If both are present, `quantization` takes precedence.
-    #[serde(default)]
-    use_compression: bool,
-    /// Quantization mode: "32bit", "16bit"
-    ///
-    /// Aliases: "float32"/"f32", "int16"/"i16"
-    ///
-    /// Memory usage:
-    /// - 32bit: Full precision (baseline)
-    /// - 16bit: 50% memory saving
-    ///
-    /// If not specified, falls back to `use_compression` for backward compatibility.
-    #[serde(default)]
-    quantization: Option<String>,
     #[serde(default)]
     zstd_compression_level: Option<i32>,
     #[serde(default)]
@@ -91,30 +77,39 @@ struct SolverSettings {
     lazy_normalization: bool,
     #[serde(default)]
     lazy_normalization_freq: u32,
-    /// Logarithmic encoding (signed magnitude biasing) for regrets (16-bit only)
-    #[serde(default)]
-    log_encoding: bool,
 
-    /// Mixed precision: strategy precision in bits (16, 8, or 4)
-    /// Only works when quantization = "16bit"
-    /// - 16: Default (same precision as quantization mode)
-    /// - 8: Mixed precision (50% less memory for strategy, ~25% overall)
-    /// - 4: Future (75% less memory for strategy)
+    // Granular precision control for each storage component
+    /// Strategy precision in bits (8, 16, or 32)
+    /// - 8: Ultra-compressed (1 byte per element, ~75% memory saving for strategy)
+    /// - 16: Balanced (2 bytes per element, default)
+    /// - 32: Full precision (4 bytes per element)
     #[serde(default = "default_strategy_bits")]
     strategy_bits: u8,
 
-    /// Mixed precision: chance cfvalues precision in bits (16 or 8)
-    /// Only works when quantization = "16bit"
-    /// - 16: Default (same precision as quantization mode)
-    /// - 8: Mixed precision (50% less memory for chance cfvalues)
+    /// Regret precision in bits (16 or 32) - for storage2 and storage4
+    /// - 16: Compressed (2 bytes per element, default)
+    /// - 32: Full precision (4 bytes per element)
+    #[serde(default = "default_regret_bits")]
+    regret_bits: u8,
+
+    /// IP counterfactual values precision in bits (16 or 32) - for storage_ip
+    /// - 16: Compressed (2 bytes per element, default)
+    /// - 32: Full precision (4 bytes per element)
+    #[serde(default = "default_ip_bits")]
+    ip_bits: u8,
+
+    /// Chance counterfactual values precision in bits (8, 16, or 32)
+    /// - 8: Ultra-compressed (1 byte per element)
+    /// - 16: Balanced (2 bytes per element, default)
+    /// - 32: Full precision (4 bytes per element)
     #[serde(default = "default_chance_bits")]
     chance_bits: u8,
 
-    /// CFR algorithm variant: "dcfr" or "dcfr+"
+    /// CFR algorithm variant: "dcfr", "dcfr+", "pdcfr+", "sapcfr+"
     /// - "dcfr": Original Discounted CFR (uses separate α and β discount factors)
     /// - "dcfr+": DCFR+ (uses single α discount factor with regret clipping)
-    ///
-    /// Recommended parameters for DCFR+: α=1.5, γ=4 (same as DCFR)
+    /// - "pdcfr+": Predictive DCFR+ (requires 50% more memory for storage4)
+    /// - "sapcfr+": Self-Adaptive Predictive CFR+ (requires 50% more memory for storage4)
     ///
     /// If not specified, defaults to "dcfr" for backward compatibility.
     #[serde(default = "default_algorithm")]
@@ -135,10 +130,25 @@ struct SolverSettings {
     /// Default: false (disabled for backward compatibility)
     #[serde(default = "default_enable_pruning")]
     enable_pruning: bool,
+
+    // DEPRECATED/EXPERIMENTAL: Legacy features
+    /// DEPRECATED: Use granular *_bits parameters instead
+    #[serde(default)]
+    #[allow(dead_code)]
+    quantization: Option<String>,
+    /// DEPRECATED: Use granular *_bits parameters instead
+    #[serde(default)]
+    #[allow(dead_code)]
+    use_compression: bool,
+    /// EXPERIMENTAL: Logarithmic encoding (not in active use)
+    #[serde(default)]
+    #[allow(dead_code)]
+    log_encoding: bool,
 }
 
 impl SolverSettings {
-    /// Get the quantization mode, handling backward compatibility with `use_compression`.
+    /// DEPRECATED: This method is no longer needed with granular *_bits parameters.
+    #[allow(dead_code)]
     fn get_quantization_mode(&self) -> Result<QuantizationMode, String> {
         if let Some(ref quant_str) = self.quantization {
             // New format: parse from string
@@ -183,8 +193,10 @@ fn default_add_allin_threshold() -> f64 { 1.5 }
 fn default_force_allin_threshold() -> f64 { 0.01 }  // 1% - permette sizing vicini allo stack
 fn default_merging_threshold() -> f64 { 0.05 }  // 5% - buon compromesso precisione/performance
 fn default_output_dir() -> String { "solved_games".to_string() }
-fn default_strategy_bits() -> u8 { 16 }  // Default: same precision as quantization mode
-fn default_chance_bits() -> u8 { 16 }  // Default: same precision as quantization mode
+fn default_strategy_bits() -> u8 { 16 }  // Default: 16-bit strategy (balanced)
+fn default_regret_bits() -> u8 { 16 }    // Default: 16-bit regrets (balanced)
+fn default_ip_bits() -> u8 { 16 }        // Default: 16-bit IP cfvalues (balanced)
+fn default_chance_bits() -> u8 { 16 }    // Default: 16-bit chance cfvalues (balanced)
 fn default_algorithm() -> String { "dcfr".to_string() }  // Default: DCFR for backward compatibility
 fn default_enable_pruning() -> bool { false }  // Default: disabled for backward compatibility
 
@@ -331,36 +343,6 @@ fn main() {
                  });
     }
 
-    // Configure log encoding BEFORE memory allocation
-    if config.solver.log_encoding {
-        game.set_log_encoding(true);
-        println!("Log encoding (signed magnitude biasing): enabled (16-bit mode only)");
-    }
-
-    // Configure mixed precision if requested
-    let quantization_mode = config.solver.get_quantization_mode()
-        .expect("Invalid quantization configuration");
-
-    if config.solver.strategy_bits != 16 {
-        if quantization_mode != QuantizationMode::Int16 {
-            eprintln!("Warning: strategy_bits only works with quantization='16bit', ignoring");
-        } else {
-            game.set_strategy_bits(config.solver.strategy_bits);
-            println!("Mixed precision: {}-bit strategy (regrets stay 16-bit)",
-                     config.solver.strategy_bits);
-        }
-    }
-
-    if config.solver.chance_bits != 16 {
-        if quantization_mode != QuantizationMode::Int16 {
-            eprintln!("Warning: chance_bits only works with quantization='16bit', ignoring");
-        } else {
-            game.set_chance_bits(config.solver.chance_bits);
-            println!("Mixed precision: {}-bit chance cfvalues",
-                     config.solver.chance_bits);
-        }
-    }
-
     // Configure CFR algorithm variant
     let algorithm = config.solver.get_algorithm()
         .expect("Invalid algorithm configuration");
@@ -376,17 +358,28 @@ fn main() {
     // Configure pruning
     game.set_enable_pruning(config.solver.enable_pruning);
     if config.solver.enable_pruning {
+        // Warn if pruning is enabled with non-DCFR algorithms
+        if algorithm != postflop_solver::CfrAlgorithm::DCFR {
+            eprintln!("⚠️  Warning: Pruning is only effective with DCFR algorithm (beta=0.5).");
+            eprintln!("            Other algorithms clip negative regrets, making pruning ineffective.");
+        }
         println!("Regret-based pruning: ENABLED (dynamic threshold)");
     }
 
-    // Allocate memory
-    game.allocate_memory_with_mode(quantization_mode);
-    let bits = match quantization_mode {
-        QuantizationMode::Float32 => 32,
-        QuantizationMode::Int16 | QuantizationMode::Int16Log => 16,
-    };
-    println!("Using {}-bit precision ({})", bits,
-        if quantization_mode.is_compressed() { "compressed" } else { "full precision" });
+    // Configure granular precision for each storage component BEFORE memory allocation
+    game.set_strategy_bits(config.solver.strategy_bits);
+    game.set_regret_bits(config.solver.regret_bits);
+    game.set_ip_bits(config.solver.ip_bits);
+    game.set_chance_bits(config.solver.chance_bits);
+
+    println!("\nMemory precision configuration:");
+    println!("  Strategy (storage1):    {}-bit", config.solver.strategy_bits);
+    println!("  Regrets (storage2/4):   {}-bit", config.solver.regret_bits);
+    println!("  IP CFValues (storage_ip): {}-bit", config.solver.ip_bits);
+    println!("  Chance CFValues:        {}-bit", config.solver.chance_bits);
+
+    // Allocate memory using configured precision settings
+    game.allocate_memory();
 
     // Solve
     println!("\nSolving (max {} iterations)...", config.solver.max_iterations);
@@ -429,7 +422,27 @@ fn main() {
         .and_then(|s| s.to_str())
         .unwrap_or("solved");
 
-    let filename = format!("{}-{}.bin", config_filename, bits);
+    // Generate suffix based on precision configuration
+    let precision_suffix = if config.solver.strategy_bits == 16
+        && config.solver.regret_bits == 16
+        && config.solver.ip_bits == 16
+        && config.solver.chance_bits == 16 {
+        "16".to_string()  // Standard 16-bit config
+    } else if config.solver.strategy_bits == 32
+        && config.solver.regret_bits == 32
+        && config.solver.ip_bits == 32
+        && config.solver.chance_bits == 32 {
+        "32".to_string()  // Full 32-bit precision
+    } else {
+        // Custom mixed precision: encode as s{strategy}r{regret}i{ip}c{chance}
+        format!("s{}r{}i{}c{}",
+                config.solver.strategy_bits,
+                config.solver.regret_bits,
+                config.solver.ip_bits,
+                config.solver.chance_bits)
+    };
+
+    let filename = format!("{}-{}.bin", config_filename, precision_suffix);
 
     // Create output directory if it doesn't exist
     let output_dir = Path::new(&config.output.directory);
