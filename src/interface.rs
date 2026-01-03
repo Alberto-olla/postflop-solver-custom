@@ -119,6 +119,18 @@ pub trait Game: Send + Sync {
     fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
         crate::solver::CfrAlgorithm::DCFR
     }
+
+    /// Returns whether regret-based pruning is enabled.
+    #[doc(hidden)]
+    fn enable_pruning(&self) -> bool {
+        false
+    }
+
+    /// Returns the tree configuration (for pruning Delta calculation).
+    #[doc(hidden)]
+    fn tree_config(&self) -> &crate::action_tree::TreeConfig {
+        unreachable!()
+    }
 }
 
 /// The trait representing a node in game tree.

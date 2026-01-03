@@ -91,6 +91,7 @@ pub struct PostFlopGame {
     lazy_normalization_freq: u32,
     log_encoding_enabled: bool,  // Signed magnitude biasing for regrets (16-bit only)
     cfr_algorithm: crate::solver::CfrAlgorithm,
+    enable_pruning: bool,  // Dynamic regret-based pruning (branch skipping)
     num_storage: u64,
     num_storage_ip: u64,
     num_storage_chance: u64,

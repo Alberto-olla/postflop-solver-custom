@@ -150,6 +150,16 @@ impl Game for PostFlopGame {
     fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
         self.cfr_algorithm
     }
+
+    #[inline]
+    fn enable_pruning(&self) -> bool {
+        self.enable_pruning
+    }
+
+    #[inline]
+    fn tree_config(&self) -> &crate::action_tree::TreeConfig {
+        &self.tree_config
+    }
 }
 
 impl Default for PostFlopGame {
@@ -194,6 +204,7 @@ impl Default for PostFlopGame {
             lazy_normalization_freq: u32::default(),
             log_encoding_enabled: bool::default(),
             cfr_algorithm: crate::solver::CfrAlgorithm::default(),
+            enable_pruning: false,
             num_storage: u64::default(),
             num_storage_ip: u64::default(),
             num_storage_chance: u64::default(),
@@ -574,6 +585,27 @@ impl PostFlopGame {
     #[inline]
     pub fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
         self.cfr_algorithm
+    }
+
+    /// Enables or disables dynamic regret-based pruning (branch skipping).
+    ///
+    /// When enabled, actions with sufficiently negative regret are temporarily skipped
+    /// to reduce computational requirements. The pruning threshold is dynamically
+    /// calculated based on the maximum payoff range and current iteration.
+    ///
+    /// This feature is particularly effective with DCFR (beta=0.5), as negative regrets
+    /// decay towards -infinity, making pruning safe and effective.
+    ///
+    /// Can be called at any time (no memory allocation constraint).
+    #[inline]
+    pub fn set_enable_pruning(&mut self, enabled: bool) {
+        self.enable_pruning = enabled;
+    }
+
+    /// Gets whether pruning is enabled.
+    #[inline]
+    pub fn enable_pruning(&self) -> bool {
+        self.enable_pruning
     }
 
     /// Sets the strategy precision in bits (mixed precision mode).

@@ -119,6 +119,22 @@ struct SolverSettings {
     /// If not specified, defaults to "dcfr" for backward compatibility.
     #[serde(default = "default_algorithm")]
     algorithm: String,
+
+    /// Enable dynamic regret-based pruning (branch skipping)
+    ///
+    /// When enabled, actions with sufficiently negative regret are temporarily skipped
+    /// to reduce computational requirements. The pruning threshold is dynamically
+    /// calculated based on:
+    /// - Maximum payoff range (Delta)
+    /// - Current iteration number
+    /// - Accumulated regret values
+    ///
+    /// This feature is particularly effective with DCFR (beta=0.5), as negative regrets
+    /// decay towards -infinity, making pruning safe and effective.
+    ///
+    /// Default: false (disabled for backward compatibility)
+    #[serde(default = "default_enable_pruning")]
+    enable_pruning: bool,
 }
 
 impl SolverSettings {
@@ -170,6 +186,7 @@ fn default_output_dir() -> String { "solved_games".to_string() }
 fn default_strategy_bits() -> u8 { 16 }  // Default: same precision as quantization mode
 fn default_chance_bits() -> u8 { 16 }  // Default: same precision as quantization mode
 fn default_algorithm() -> String { "dcfr".to_string() }  // Default: DCFR for backward compatibility
+fn default_enable_pruning() -> bool { false }  // Default: disabled for backward compatibility
 
 fn parse_bet_sizes(
     street: &StreetBetSizes,
@@ -355,6 +372,12 @@ fn main() {
         postflop_solver::CfrAlgorithm::SAPCFRPlus => "SAPCFR+ (asymmetric predictive CFR+)",
     };
     println!("Using algorithm: {}", algorithm_name);
+
+    // Configure pruning
+    game.set_enable_pruning(config.solver.enable_pruning);
+    if config.solver.enable_pruning {
+        println!("Regret-based pruning: ENABLED (dynamic threshold)");
+    }
 
     // Allocate memory
     game.allocate_memory_with_mode(quantization_mode);

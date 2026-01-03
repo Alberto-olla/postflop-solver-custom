@@ -268,16 +268,69 @@ fn solve_recursive<T: Game>(
     // if the current player is `player`
     else if node.player() == player {
         // compute the counterfactual values of each action
-        for_each_child(node, |action| {
-            solve_recursive(
-                row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
-                game,
-                &mut node.play(action),
-                player,
-                cfreach,
-                params,
-            );
-        });
+        // Use manual iteration to support pruning (branch skipping)
+        if game.enable_pruning() {
+            // Pruning enabled: check each action before recursing
+            let delta = game.tree_config().effective_stack as f32;
+            let t = params.current_iteration as f32;
+            let pruning_threshold = -(delta * t.sqrt() * 10.0); // K=10 safety factor
+
+            for action in node.action_indices() {
+                // Check if this action should be skipped (pruned)
+                let should_skip = if game.is_compression_enabled() {
+                    // Compressed mode: check avg regret across all hands for this action
+                    let regrets = node.regrets_compressed();
+                    let scale = node.regret_scale();
+                    let decoder = scale / i16::MAX as f32;
+                    let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
+
+                    // Calculate average regret for this action
+                    let avg_regret: f32 = action_regrets.iter()
+                        .map(|&r| r as f32 * decoder)
+                        .sum::<f32>() / num_hands as f32;
+
+                    avg_regret < pruning_threshold
+                } else {
+                    // Float32 mode
+                    let regrets = node.regrets();
+                    let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
+                    let avg_regret: f32 = action_regrets.iter().sum::<f32>() / num_hands as f32;
+                    avg_regret < pruning_threshold
+                };
+
+                if should_skip {
+                    // Skip this branch - fill with zeros
+                    let mut cfv_lock = cfv_actions.lock();
+                    let row = row_mut(cfv_lock.spare_capacity_mut(), action, num_hands);
+                    for elem in row {
+                        elem.write(0.0);
+                    }
+                    drop(cfv_lock); // Release lock before recursion
+                } else {
+                    // Normal recursion
+                    solve_recursive(
+                        row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
+                        game,
+                        &mut node.play(action),
+                        player,
+                        cfreach,
+                        params,
+                    );
+                }
+            }
+        } else {
+            // Pruning disabled: use original parallel for_each
+            for_each_child(node, |action| {
+                solve_recursive(
+                    row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
+                    game,
+                    &mut node.play(action),
+                    player,
+                    cfreach,
+                    params,
+                );
+            });
+        }
 
         // compute the strategy by regret-maching algorithm
         let mut strategy = if params.algorithm == CfrAlgorithm::PDCFRPlus {
