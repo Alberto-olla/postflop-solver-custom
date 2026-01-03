@@ -137,20 +137,20 @@ pub struct PostFlopGame {
 #[repr(C)]
 pub struct PostFlopNode {
     prev_action: Action,
-    player: u8,
-    turn: Card,
-    river: Card,
-    is_locked: bool,
+    // Packed field: player (5 bits) + turn (8 bits) + river (8 bits) + is_locked (1 bit)
+    // Bits 0-4: player (0-31, actual values 0-2 + flags)
+    // Bits 5-12: turn card (0-255)
+    // Bits 13-20: river card (0-255)
+    // Bit 21: is_locked
+    packed_state: u32,
     amount: i32,
     children_offset: u32,
     num_children: u16,
     num_elements_ip: u16,
     num_elements: u32,
-    scale1: f32,
-    scale2: f32,
-
-    scale3: f32,
-    scale4: f32,
+    scale1: f32,  // strategy + cfvalue_chance
+    scale2: f32,  // regret + cfvalue + prev_regret (unified)
+    scale3: f32,  // cfvalue_ip
     storage1: *mut u8, // strategy
 
     storage2: *mut u8, // regrets or cfvalues

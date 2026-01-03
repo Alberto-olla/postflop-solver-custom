@@ -6,17 +6,17 @@ use std::slice;
 impl GameNode for PostFlopNode {
     #[inline]
     fn is_terminal(&self) -> bool {
-        self.player & PLAYER_TERMINAL_FLAG != 0
+        self.get_player() & PLAYER_TERMINAL_FLAG != 0
     }
 
     #[inline]
     fn is_chance(&self) -> bool {
-        self.player & PLAYER_CHANCE_FLAG != 0
+        self.get_player() & PLAYER_CHANCE_FLAG != 0
     }
 
     #[inline]
     fn cfvalue_storage_player(&self) -> Option<usize> {
-        let prev_player = self.player & PLAYER_MASK;
+        let prev_player = self.get_player() & PLAYER_MASK;
         match prev_player {
             0 => Some(1),
             1 => Some(0),
@@ -26,7 +26,7 @@ impl GameNode for PostFlopNode {
 
     #[inline]
     fn player(&self) -> usize {
-        self.player as usize
+        self.get_player() as usize
     }
 
     #[inline]
@@ -287,12 +287,12 @@ impl GameNode for PostFlopNode {
 
     #[inline]
     fn prev_regret_scale(&self) -> f32 {
-        self.scale4
+        self.scale2  // Unified with regret_scale
     }
 
     #[inline]
     fn set_prev_regret_scale(&mut self, scale: f32) {
-        self.scale4 = scale;
+        self.scale2 = scale;  // Unified with regret_scale
     }
 
     #[inline]
@@ -377,7 +377,7 @@ impl GameNode for PostFlopNode {
 
     #[inline]
     fn enable_parallelization(&self) -> bool {
-        self.river == NOT_DEALT
+        self.get_river() == NOT_DEALT
     }
 
     // 4-bit quantization methods
@@ -467,12 +467,9 @@ impl GameNode for PostFlopNode {
 impl Default for PostFlopNode {
     #[inline]
     fn default() -> Self {
-        Self {
+        let mut node = Self {
             prev_action: Action::None,
-            player: PLAYER_OOP,
-            turn: NOT_DEALT,
-            river: NOT_DEALT,
-            is_locked: false,
+            packed_state: 0,
             amount: 0,
             children_offset: 0,
             num_children: 0,
@@ -481,16 +478,75 @@ impl Default for PostFlopNode {
             scale1: 0.0,
             scale2: 0.0,
             scale3: 0.0,
-            scale4: 0.0,
             storage1: ptr::null_mut(),
             storage2: ptr::null_mut(),
             storage3: ptr::null_mut(),
             storage4: ptr::null_mut(),
-        }
+        };
+        node.set_player(PLAYER_OOP);
+        node.set_turn(NOT_DEALT);
+        node.set_river(NOT_DEALT);
+        node.set_is_locked(false);
+        node
     }
 }
 
 impl PostFlopNode {
+    // Bit masks and shifts for packed_state
+    const PLAYER_MASK: u32 = 0x1F;           // Bits 0-4 (5 bits)
+    const TURN_MASK: u32 = 0xFF << 5;        // Bits 5-12 (8 bits)
+    const RIVER_MASK: u32 = 0xFF << 13;      // Bits 13-20 (8 bits)
+    const IS_LOCKED_MASK: u32 = 1 << 21;     // Bit 21
+
+    const TURN_SHIFT: u32 = 5;
+    const RIVER_SHIFT: u32 = 13;
+
+    #[inline]
+    pub(crate) fn get_player(&self) -> u8 {
+        (self.packed_state & Self::PLAYER_MASK) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_player(&mut self, player: u8) {
+        self.packed_state = (self.packed_state & !Self::PLAYER_MASK) | (player as u32 & Self::PLAYER_MASK);
+    }
+
+    #[inline]
+    pub(crate) fn get_turn(&self) -> Card {
+        ((self.packed_state & Self::TURN_MASK) >> Self::TURN_SHIFT) as Card
+    }
+
+    #[inline]
+    pub(crate) fn set_turn(&mut self, turn: Card) {
+        self.packed_state = (self.packed_state & !Self::TURN_MASK)
+            | ((turn as u32) << Self::TURN_SHIFT);
+    }
+
+    #[inline]
+    pub(crate) fn get_river(&self) -> Card {
+        ((self.packed_state & Self::RIVER_MASK) >> Self::RIVER_SHIFT) as Card
+    }
+
+    #[inline]
+    pub(crate) fn set_river(&mut self, river: Card) {
+        self.packed_state = (self.packed_state & !Self::RIVER_MASK)
+            | ((river as u32) << Self::RIVER_SHIFT);
+    }
+
+    #[inline]
+    pub(crate) fn get_is_locked(&self) -> bool {
+        (self.packed_state & Self::IS_LOCKED_MASK) != 0
+    }
+
+    #[inline]
+    pub(crate) fn set_is_locked(&mut self, is_locked: bool) {
+        if is_locked {
+            self.packed_state |= Self::IS_LOCKED_MASK;
+        } else {
+            self.packed_state &= !Self::IS_LOCKED_MASK;
+        }
+    }
+
     #[inline]
     pub(super) fn children(&self) -> &[MutexLike<Self>] {
         // This is safe because `MutexLike<T>` is a `repr(transparent)` wrapper around `T`.

@@ -53,7 +53,7 @@ impl Game for PostFlopGame {
 
     #[inline]
     fn chance_factor(&self, node: &Self::Node) -> usize {
-        if node.turn == NOT_DEALT {
+        if node.get_turn() == NOT_DEALT {
             45 - self.bunching_num_dead_cards
         } else {
             44 - self.bunching_num_dead_cards
@@ -84,26 +84,26 @@ impl Game for PostFlopGame {
 
     #[inline]
     fn isomorphic_chances(&self, node: &Self::Node) -> &[u8] {
-        if node.turn == NOT_DEALT {
+        if node.get_turn() == NOT_DEALT {
             &self.isomorphism_ref_turn
         } else {
-            &self.isomorphism_ref_river[node.turn as usize]
+            &self.isomorphism_ref_river[node.get_turn() as usize]
         }
     }
 
     #[inline]
     fn isomorphic_swap(&self, node: &Self::Node, index: usize) -> &[Vec<(u16, u16)>; 2] {
-        if node.turn == NOT_DEALT {
+        if node.get_turn() == NOT_DEALT {
             &self.isomorphism_swap_turn[self.isomorphism_card_turn[index] as usize & 3]
         } else {
-            &self.isomorphism_swap_river[node.turn as usize & 3]
-                [self.isomorphism_card_river[node.turn as usize & 3][index] as usize & 3]
+            &self.isomorphism_swap_river[node.get_turn() as usize & 3]
+                [self.isomorphism_card_river[node.get_turn() as usize & 3][index] as usize & 3]
         }
     }
 
     #[inline]
     fn locking_strategy(&self, node: &Self::Node) -> &[f32] {
-        if !node.is_locked {
+        if !node.get_is_locked() {
             &[]
         } else {
             let index = self.node_index(node);
@@ -1116,8 +1116,8 @@ impl PostFlopGame {
         }
 
         let mut root = self.node_arena[0].lock();
-        root.turn = self.card_config.turn;
-        root.river = self.card_config.river;
+        root.set_turn(self.card_config.turn);
+        root.set_river(self.card_config.river);
 
         self.build_tree_recursive(0, &self.action_root.lock(), &mut info);
 
@@ -1250,7 +1250,7 @@ impl PostFlopGame {
         info: &mut BuildTreeInfo,
     ) {
         let mut node = self.node_arena[node_index].lock();
-        node.player = action_node.player;
+        node.set_player(action_node.player);
         node.amount = action_node.amount;
 
         if node.is_terminal() {
@@ -1283,7 +1283,7 @@ impl PostFlopGame {
         let flop_mask: u64 = (1 << flop[0]) | (1 << flop[1]) | (1 << flop[2]);
 
         // deal turn
-        if node.turn == NOT_DEALT {
+        if node.get_turn() == NOT_DEALT {
             let skip_cards = &self.isomorphism_card_turn;
             let skip_mask: u64 = skip_cards.iter().map(|&card| 1 << card).sum();
 
@@ -1293,7 +1293,7 @@ impl PostFlopGame {
                     node.num_children += 1;
                     let mut child = node.children().last().unwrap().lock();
                     child.prev_action = Action::Chance(card);
-                    child.turn = card;
+                    child.set_turn(card);
                 }
             }
 
@@ -1301,8 +1301,8 @@ impl PostFlopGame {
         }
         // deal river
         else {
-            let turn_mask = flop_mask | (1 << node.turn);
-            let skip_cards = &self.isomorphism_card_river[node.turn as usize & 3];
+            let turn_mask = flop_mask | (1 << node.get_turn());
+            let skip_cards = &self.isomorphism_card_river[node.get_turn() as usize & 3];
             let skip_mask: u64 = skip_cards.iter().map(|&card| 1 << card).sum();
 
             node.children_offset = (info.river_index - node_index) as u32;
@@ -1311,8 +1311,8 @@ impl PostFlopGame {
                     node.num_children += 1;
                     let mut child = node.children().last().unwrap().lock();
                     child.prev_action = Action::Chance(card);
-                    child.turn = node.turn;
-                    child.river = card;
+                    child.set_turn(node.get_turn());
+                    child.set_river(card);
                 }
             }
 
@@ -1335,7 +1335,7 @@ impl PostFlopGame {
     ) {
         let mut node = self.node_arena[node_index].lock();
 
-        let street = match (node.turn, node.river) {
+        let street = match (node.get_turn(), node.get_river()) {
             (NOT_DEALT, _) => BoardState::Flop,
             (_, NOT_DEALT) => BoardState::Turn,
             _ => BoardState::River,
@@ -1354,11 +1354,11 @@ impl PostFlopGame {
         for (child, action) in node.children().iter().zip(action_node.actions.iter()) {
             let mut child = child.lock();
             child.prev_action = *action;
-            child.turn = node.turn;
-            child.river = node.river;
+            child.set_turn(node.get_turn());
+            child.set_river(node.get_river());
         }
 
-        let num_private_hands = self.num_private_hands(node.player as usize);
+        let num_private_hands = self.num_private_hands(node.player());
         node.num_elements = (node.num_actions() * num_private_hands) as u32;
         node.num_elements_ip = match node.prev_action {
             Action::None | Action::Chance(_) => self.num_private_hands(PLAYER_IP as usize) as u16,
@@ -1959,7 +1959,7 @@ impl PostFlopGame {
 
         // STEP 1
         let mut info = BuildTreeInfo {
-            num_storage: self.num_private_hands(node.player as usize) as u64,
+            num_storage: self.num_private_hands(node.player()) as u64,
             ..Default::default()
         };
 
@@ -1979,7 +1979,7 @@ impl PostFlopGame {
         node.num_children -= 1;
 
         // STEP 3
-        node.num_elements -= self.num_private_hands(node.player as usize) as u32;
+        node.num_elements -= self.num_private_hands(node.player()) as u32;
 
         Ok(info)
     }
@@ -2042,7 +2042,6 @@ impl PostFlopGame {
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;
                 node.scale3 = 1.0;
-                node.scale4 = 1.0;
             } else {
                 unsafe {
                     let ptr1 = self.storage1.as_mut_ptr();
@@ -2078,7 +2077,6 @@ impl PostFlopGame {
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;
                 node.scale3 = 1.0;
-                node.scale4 = 1.0;
             }
         }
     }

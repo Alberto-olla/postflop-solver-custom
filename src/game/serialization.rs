@@ -360,10 +360,7 @@ impl Encode for PostFlopNode {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         // contents
         self.prev_action.encode(encoder)?;
-        self.player.encode(encoder)?;
-        self.turn.encode(encoder)?;
-        self.river.encode(encoder)?;
-        self.is_locked.encode(encoder)?;
+        self.packed_state.encode(encoder)?;  // Encode packed state instead of individual fields
         self.amount.encode(encoder)?;
         self.children_offset.encode(encoder)?;
         self.num_children.encode(encoder)?;
@@ -398,10 +395,7 @@ impl<C> Decode<C> for PostFlopNode {
         // node instance
         let mut node = Self {
             prev_action: Decode::decode(decoder)?,
-            player: Decode::decode(decoder)?,
-            turn: Decode::decode(decoder)?,
-            river: Decode::decode(decoder)?,
-            is_locked: Decode::decode(decoder)?,
+            packed_state: Decode::decode(decoder)?,  // Decode packed state
             amount: Decode::decode(decoder)?,
             children_offset: Decode::decode(decoder)?,
             num_children: Decode::decode(decoder)?,

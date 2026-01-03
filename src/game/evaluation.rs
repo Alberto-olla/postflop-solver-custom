@@ -38,18 +38,18 @@ impl PostFlopGame {
         let result = unsafe { &mut *(result as *mut _ as *mut [f32]) };
 
         // someone folded
-        if node.player & PLAYER_FOLD_FLAG == PLAYER_FOLD_FLAG {
-            let folded_player = node.player & PLAYER_MASK;
+        if node.get_player() & PLAYER_FOLD_FLAG == PLAYER_FOLD_FLAG {
+            let folded_player = node.get_player() & PLAYER_MASK;
             let payoff = if folded_player as usize != player {
                 amount_win
             } else {
                 amount_lose
             };
 
-            let valid_indices = if node.river != NOT_DEALT {
-                &self.valid_indices_river[card_pair_to_index(node.turn, node.river)]
-            } else if node.turn != NOT_DEALT {
-                &self.valid_indices_turn[node.turn as usize]
+            let valid_indices = if node.get_river() != NOT_DEALT {
+                &self.valid_indices_river[card_pair_to_index(node.get_turn(), node.get_river())]
+            } else if node.get_turn() != NOT_DEALT {
+                &self.valid_indices_turn[node.get_turn() as usize]
             } else {
                 &self.valid_indices_flop
             };
@@ -93,7 +93,7 @@ impl PostFlopGame {
         }
         // showdown (optimized for no rake; 2-pass)
         else if rake == 0.0 {
-            let pair_index = card_pair_to_index(node.turn, node.river);
+            let pair_index = card_pair_to_index(node.get_turn(), node.get_river());
             let hand_strength = &self.hand_strength[pair_index];
             let player_strength = &hand_strength[player];
             let opponent_strength = &hand_strength[player ^ 1];
@@ -154,7 +154,7 @@ impl PostFlopGame {
             let amount_tie = -0.5 * rake / self.num_combinations;
             let same_hand_index = &self.same_hand_index[player];
 
-            let pair_index = card_pair_to_index(node.turn, node.river);
+            let pair_index = card_pair_to_index(node.get_turn(), node.get_river());
             let hand_strength = &self.hand_strength[pair_index];
             let player_strength = &hand_strength[player];
             let opponent_strength = &hand_strength[player ^ 1];
@@ -268,18 +268,18 @@ impl PostFlopGame {
         let opponent_len = self.private_cards[player ^ 1].len();
 
         // someone folded
-        if node.player & PLAYER_FOLD_FLAG == PLAYER_FOLD_FLAG {
-            let folded_player = node.player & PLAYER_MASK;
+        if node.get_player() & PLAYER_FOLD_FLAG == PLAYER_FOLD_FLAG {
+            let folded_player = node.get_player() & PLAYER_MASK;
             let payoff = if folded_player as usize != player {
                 amount_win
             } else {
                 amount_lose
             };
 
-            let indices = if node.river != NOT_DEALT {
-                &self.bunching_num_river[player][card_pair_to_index(node.turn, node.river)]
-            } else if node.turn != NOT_DEALT {
-                &self.bunching_num_turn[player][node.turn as usize]
+            let indices = if node.get_river() != NOT_DEALT {
+                &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
+            } else if node.get_turn() != NOT_DEALT {
+                &self.bunching_num_turn[player][node.get_turn() as usize]
             } else {
                 &self.bunching_num_flop[player]
             };
@@ -295,7 +295,7 @@ impl PostFlopGame {
         }
         // showdown
         else {
-            let pair_index = card_pair_to_index(node.turn, node.river);
+            let pair_index = card_pair_to_index(node.get_turn(), node.get_river());
             let indices = &self.bunching_num_river[player][pair_index];
             let player_strength = &self.bunching_strength[pair_index][player];
             let opponent_strength = &self.bunching_strength[pair_index][player ^ 1];

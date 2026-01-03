@@ -166,7 +166,7 @@ impl PostFlopGame {
         }
         // bunching
         else {
-            let node_turn = self.node().turn;
+            let node_turn = self.node().get_turn();
             if node_turn != NOT_DEALT {
                 board_mask |= 1 << node_turn;
             }
@@ -323,10 +323,10 @@ impl PostFlopGame {
             if action_index == usize::MAX {
                 let node = self.node();
                 let isomorphism = self.isomorphic_chances(&node);
-                let isomorphic_cards = if node.turn == NOT_DEALT {
+                let isomorphic_cards = if node.get_turn() == NOT_DEALT {
                     &self.isomorphism_card_turn
                 } else {
-                    &self.isomorphism_card_river[node.turn as usize & 3]
+                    &self.isomorphism_card_river[node.get_turn() as usize & 3]
                 };
                 for (i, &repr_index) in isomorphism.iter().enumerate() {
                     if action_card == isomorphic_cards[i] {
@@ -521,10 +521,10 @@ impl PostFlopGame {
 
             for player in 0..2 {
                 let node = self.node();
-                let indices = if node.river != NOT_DEALT {
-                    &self.bunching_num_river[player][card_pair_to_index(node.turn, node.river)]
-                } else if node.turn != NOT_DEALT {
-                    &self.bunching_num_turn[player][node.turn as usize]
+                let indices = if node.get_river() != NOT_DEALT {
+                    &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
+                } else if node.get_turn() != NOT_DEALT {
+                    &self.bunching_num_turn[player][node.get_turn() as usize]
                 } else {
                     &self.bunching_num_flop[player]
                 };
@@ -973,7 +973,7 @@ impl PostFlopGame {
             self.apply_swap(chunk, player, true);
         });
 
-        node.is_locked = true;
+        node.set_is_locked(true);
         let index = self.node_index(&node);
         self.locking_strategy.insert(index, locking);
     }
@@ -1002,11 +1002,11 @@ impl PostFlopGame {
         }
 
         let mut node = self.node();
-        if !node.is_locked {
+        if !node.get_is_locked() {
             return;
         }
 
-        node.is_locked = false;
+        node.set_is_locked(false);
         let index = self.node_index(&node);
         self.locking_strategy.remove(&index);
     }
@@ -1099,12 +1099,12 @@ impl PostFlopGame {
             for player in 0..2 {
                 let node = self.node();
                 let opponent_len = self.num_private_hands(player ^ 1);
-                let indices = if node.turn == NOT_DEALT {
+                let indices = if node.get_turn() == NOT_DEALT {
                     &self.bunching_num_flop[player]
-                } else if node.river == NOT_DEALT {
-                    &self.bunching_num_turn[player][node.turn as usize]
+                } else if node.get_river() == NOT_DEALT {
+                    &self.bunching_num_turn[player][node.get_turn() as usize]
                 } else {
-                    &self.bunching_num_river[player][card_pair_to_index(node.turn, node.river)]
+                    &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
                 };
 
                 let mut weights_buf = Vec::new();
@@ -1247,9 +1247,9 @@ impl PostFlopGame {
         let node = self.node();
         let opponent_len = opponent_weights.len();
 
-        if node.river == NOT_DEALT {
-            let indices = if node.turn != NOT_DEALT {
-                &self.bunching_coef_turn[player][node.turn as usize]
+        if node.get_river() == NOT_DEALT {
+            let indices = if node.get_turn() != NOT_DEALT {
+                &self.bunching_coef_turn[player][node.get_turn() as usize]
             } else {
                 &self.bunching_coef_flop[player]
             };
@@ -1268,7 +1268,7 @@ impl PostFlopGame {
         }
         // showdown
         else {
-            let pair_index = card_pair_to_index(node.turn, node.river);
+            let pair_index = card_pair_to_index(node.get_turn(), node.get_river());
             let indices = &self.bunching_num_river[player][pair_index];
             let player_strength = &self.bunching_strength[pair_index][player];
             let opponent_strength = &self.bunching_strength[pair_index][player ^ 1];
