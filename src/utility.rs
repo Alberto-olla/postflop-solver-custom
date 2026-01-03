@@ -748,7 +748,11 @@ fn compute_cfvalue_recursive<T: Game>(
                  let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result);
                  node.set_cfvalue_ip_scale(cfv_scale);
             }
-            _ => panic!("Invalid ip_bits: {}. Valid values: 8, 16, 32", game.ip_bits()),
+            4 => {
+                 let cfv_scale = encode_signed_i4_packed(node.cfvalues_ip_i4_packed_mut(), result);
+                 node.set_cfvalue_ip_scale(cfv_scale);
+            }
+            _ => panic!("Invalid ip_bits: {}. Valid values: 4, 8, 16, 32", game.ip_bits()),
         }
     }
 }

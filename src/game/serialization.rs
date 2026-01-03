@@ -84,6 +84,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
+            4 => 0, // Special case
             _ => 2,
         };
 
@@ -130,7 +131,11 @@ impl PostFlopGame {
                 };
 
                 let len_regrets = regrets_bytes * node.num_elements as usize;
-                let len_ip = ip_bytes * node.num_elements_ip as usize;
+                let len_ip = if self.ip_bits == 4 {
+                    (node.num_elements_ip as usize + 1) / 2
+                } else {
+                    ip_bytes * node.num_elements_ip as usize
+                };
                 num_storage[0] = offset_strategy as usize + len_strategy;
                 num_storage[1] = offset_regrets as usize + len_regrets;
                 num_storage[2] = offset_ip as usize + len_ip;
@@ -290,8 +295,13 @@ impl<C> Decode<C> for PostFlopGame {
                 _ => (chance_bytes * game.num_storage_chance) as usize,
             };
 
+            let storage_ip_bytes = match game.ip_bits {
+                4 => ((game.num_storage_ip + 1) / 2) as usize,
+                _ => (num_bytes * game.num_storage_ip) as usize,
+            };
+
             game.storage2 = vec![0; (num_bytes * game.num_storage) as usize];
-            game.storage_ip = vec![0; (num_bytes * game.num_storage_ip) as usize];
+            game.storage_ip = vec![0; storage_ip_bytes];
             game.storage_chance = vec![0; storage_chance_bytes];
         }
 

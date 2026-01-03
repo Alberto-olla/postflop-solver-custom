@@ -774,9 +774,24 @@ impl PostFlopGame {
             }
         } else if node.has_cfvalues_ip() && player == PLAYER_IP as usize {
             if self.is_compression_enabled() {
-                let slice = node.cfvalues_ip_compressed();
-                let scale = node.cfvalue_ip_scale();
-                decode_signed_slice(slice, scale)
+                // Dispatch based on ip_bits precision
+                match self.ip_bits() {
+                    8 => {
+                        let slice = node.cfvalues_ip_i8();
+                        let scale = node.cfvalue_ip_scale();
+                        decode_signed_i8(slice, scale)
+                    }
+                    4 => {
+                        let slice = node.cfvalues_ip_i4_packed();
+                        let scale = node.cfvalue_ip_scale();
+                        decode_signed_i4_packed(slice, scale, self.num_private_hands(1))
+                    }
+                    _ => {
+                        let slice = node.cfvalues_ip_compressed();
+                        let scale = node.cfvalue_ip_scale();
+                        decode_signed_slice(slice, scale)
+                    }
+                }
             } else {
                 node.cfvalues_ip().to_vec()
             }

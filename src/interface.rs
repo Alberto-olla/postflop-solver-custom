@@ -293,6 +293,18 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns IP's 4-bit packed counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_ip_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to IP's 4-bit packed counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_ip_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
     /// Returns the compressed buffer for counterfactual values.
     #[doc(hidden)]
     fn cfvalues_chance_compressed(&self) -> &[i16] {

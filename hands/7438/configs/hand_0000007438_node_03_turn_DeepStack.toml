@@ -52,7 +52,7 @@ target_exploitability_pct = 0.5
 # Granular precision control
 strategy_bits = 16
 regret_bits = 8
-ip_bits = 8
+ip_bits = 4
 chance_bits = 4
 
 algorithm = "dcfr" # dcfr and dcfr+ also work sapcfr+ pdcfr+

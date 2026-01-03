@@ -202,6 +202,18 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
+    fn cfvalues_ip_i4_packed(&self) -> &[u8] {
+        let len = (self.num_elements_ip as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage3 as *const u8, len) }
+    }
+
+    #[inline]
+    fn cfvalues_ip_i4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements_ip as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage3 as *mut u8, len) }
+    }
+
+    #[inline]
     fn cfvalues_chance_i8(&self) -> &[i8] {
         unsafe { slice::from_raw_parts(self.storage1 as *const i8, self.num_elements as usize) }
     }

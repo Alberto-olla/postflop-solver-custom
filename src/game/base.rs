@@ -484,7 +484,8 @@ impl PostFlopGame {
             32 => 4,  // f32
             16 => 2,  // i16
             8 => 1,   // i8
-            _ => panic!("Invalid ip_bits: {}. Valid values: 8, 16, 32", self.ip_bits),
+            4 => 0,   // Special case: packed
+            _ => panic!("Invalid ip_bits: {}. Valid values: 4, 8, 16, 32", self.ip_bits),
         };
 
         let chance_bytes_per_elem = match self.chance_bits {
@@ -529,7 +530,10 @@ impl PostFlopGame {
 
         self.clear_storage();
         let storage2_bytes = (regret_bytes_per_elem * self.num_storage) as usize;   // Regrets
-        let storage_ip_bytes = (ip_bytes_per_elem * self.num_storage_ip) as usize;  // IP cfvalues
+        let storage_ip_bytes = match self.ip_bits {
+            4 => ((self.num_storage_ip + 1) / 2) as usize,
+            _ => (ip_bytes_per_elem * self.num_storage_ip) as usize,
+        };
 
         self.storage1 = vec![0; storage1_bytes];
         self.storage2 = vec![0; storage2_bytes];
@@ -751,11 +755,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            32 | 16 | 8 => {
+            32 | 16 | 8 | 4 => {
                 self.ip_bits = bits;
             }
             _ => {
-                panic!("Invalid ip_bits: {}. Valid values: 8, 16, 32", bits);
+                panic!("Invalid ip_bits: {}. Valid values: 4, 8, 16, 32", bits);
             }
         }
     }
@@ -1930,6 +1934,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
+            4 => 0, // Special case
             _ => 2,
         };
 
@@ -1984,7 +1989,11 @@ impl PostFlopGame {
                 }
                 strategy_counter += strategy_bytes * node.num_elements as usize;
                 regrets_counter += regrets_bytes * node.num_elements as usize;
-                ip_counter += ip_bytes * node.num_elements_ip as usize;
+                if self.ip_bits == 4 {
+                    ip_counter += (node.num_elements_ip as usize + 1) / 2;
+                } else {
+                    ip_counter += ip_bytes * node.num_elements_ip as usize;
+                }
                 if use_storage4 {
                     storage4_counter += regrets_bytes * node.num_elements as usize;
                 }
