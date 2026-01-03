@@ -146,9 +146,10 @@ impl SolverSettings {
         match self.algorithm.to_lowercase().as_str() {
             "dcfr" => Ok(postflop_solver::CfrAlgorithm::DCFR),
             "dcfr+" | "dcrfplus" => Ok(postflop_solver::CfrAlgorithm::DCRFPlus),
+            "pdcfr+" | "pdcfrplus" => Ok(postflop_solver::CfrAlgorithm::PDCFRPlus),
             "sapcfr+" | "sapcfrplus" => Ok(postflop_solver::CfrAlgorithm::SAPCFRPlus),
             _ => Err(format!(
-                "Invalid algorithm: '{}'. Valid options: dcfr, dcfr+",
+                "Invalid algorithm: '{}'. Valid options: dcfr, dcfr+, pdcfr+, sapcfr+",
                 self.algorithm
             )),
         }
@@ -350,6 +351,7 @@ fn main() {
     let algorithm_name = match algorithm {
         postflop_solver::CfrAlgorithm::DCFR => "DCFR (dual discount factors)",
         postflop_solver::CfrAlgorithm::DCRFPlus => "DCFR+ (single discount + clipping)",
+        postflop_solver::CfrAlgorithm::PDCFRPlus => "PDCFR+ (predictive discounted CFR+)",
         postflop_solver::CfrAlgorithm::SAPCFRPlus => "SAPCFR+ (asymmetric predictive CFR+)",
     };
     println!("Using algorithm: {}", algorithm_name);

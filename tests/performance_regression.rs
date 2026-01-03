@@ -1,5 +1,6 @@
-//! Performance regression tests for the three CFR algorithms
+//! Performance regression tests for the CFR algorithms
 //!
+//! Tests all four CFR algorithm variants: DCFR, DCFR+, PDCFR+, and SAPCFR+
 //! These tests use the exact configuration from node_03_turn TOML file
 //! to ensure consistent comparison with baseline results.
 //!
@@ -358,7 +359,67 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
 }
 
 // ============================================================================
-// BONUS TEST: Run all three and compare
+// TEST 4: PDCFR+ with 16-bit precision
+// ============================================================================
+
+#[test]
+fn test_performance_pdcfrplus_16bit_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline values from empirical testing
+    const BASELINE_ITERATIONS: u32 = 290; // For reference only
+    const BASELINE_TIME_SECS: f32 = 3.30;
+
+    // Tolerance: allow 5% degradation for time
+    const TIME_TOLERANCE: f32 = 1.05;
+
+    // Load game from TOML
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // Configure for PDCFR+ with 16-bit
+    game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
+    game.allocate_memory(true); // 16-bit mode
+
+    // Print header before solving
+    println!("\n=== PDCFR+ 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(
+        final_expl <= target_expl,
+        "Failed to reach target exploitability. Got: {}, Target: {}",
+        final_expl,
+        target_expl
+    );
+
+    // WARNING: Time should not increase significantly
+    assert!(
+        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
+        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
+        BASELINE_TIME_SECS,
+        time_secs,
+        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
+    );
+
+    // SUCCESS: Print if performance improved
+    if time_secs < BASELINE_TIME_SECS * 0.90 {
+        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+                 BASELINE_TIME_SECS - time_secs,
+                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+    }
+}
+
+// ============================================================================
+// BONUS TEST: Run all four and compare
 // ============================================================================
 
 #[test]
@@ -384,6 +445,14 @@ fn test_compare_all_algorithms_node03_turn() {
     let dcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
     let dcfrplus_time = start.elapsed();
 
+    // Test PDCFR+
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+    game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
+    game.allocate_memory(true);
+    let start = Instant::now();
+    let pdcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
+    let pdcfrplus_time = start.elapsed();
+
     // Test SAPCFR+
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
@@ -400,6 +469,8 @@ fn test_compare_all_algorithms_node03_turn() {
              dcfr_time.as_secs_f32(), dcfr_expl);
     println!("│ DCFR+       │ {:>8.2} │ {:>15.6} │",
              dcfrplus_time.as_secs_f32(), dcfrplus_expl);
+    println!("│ PDCFR+      │ {:>8.2} │ {:>15.6} │",
+             pdcfrplus_time.as_secs_f32(), pdcfrplus_expl);
     println!("│ SAPCFR+     │ {:>8.2} │ {:>15.6} │",
              sapcfr_time.as_secs_f32(), sapcfr_expl);
     println!("└─────────────┴──────────┴─────────────────┘");
@@ -407,5 +478,6 @@ fn test_compare_all_algorithms_node03_turn() {
     // All should reach target
     assert!(dcfr_expl <= target_expl);
     assert!(dcfrplus_expl <= target_expl);
+    assert!(pdcfrplus_expl <= target_expl);
     assert!(sapcfr_expl <= target_expl);
 }

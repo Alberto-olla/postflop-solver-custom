@@ -49,7 +49,7 @@ ip_raise = "full"
 max_iterations = 500
 target_exploitability_pct = 0.5
 quantization = "16bit"
-algorithm = "sapcfr+" # dcfr and dcfr+ also work
+algorithm = "pdcfr+" # dcfr and dcfr+ also work sapcfr+ pdcfr+
 zstd_compression_level = 0
 dry_run = false
 

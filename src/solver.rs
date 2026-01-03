@@ -10,12 +10,13 @@ use std::mem::MaybeUninit;
 use crate::alloc::*;
 
 // Import nuovi moduli trait-based
-use crate::cfr_algorithms::{CfrAlgorithmTrait, DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+use crate::cfr_algorithms::{CfrAlgorithmTrait, DcfrAlgorithm, DcfrPlusAlgorithm, PdcfrPlusAlgorithm, SapcfrPlusAlgorithm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfrAlgorithm {
     DCFR,
     DCRFPlus,
+    PDCFRPlus,
     SAPCFRPlus,
 }
 
@@ -28,6 +29,7 @@ impl CfrAlgorithm {
         match self {
             Self::DCFR => DcfrAlgorithm.requires_storage4(),
             Self::DCRFPlus => DcfrPlusAlgorithm.requires_storage4(),
+            Self::PDCFRPlus => PdcfrPlusAlgorithm.requires_storage4(),
             Self::SAPCFRPlus => SapcfrPlusAlgorithm.requires_storage4(),
         }
     }
@@ -44,6 +46,7 @@ struct DiscountParams {
     beta_t: f32,
     gamma_t: f32,
     algorithm: CfrAlgorithm,
+    current_iteration: u32,
 }
 
 impl DiscountParams {
@@ -52,6 +55,7 @@ impl DiscountParams {
         let params = match algorithm {
             CfrAlgorithm::DCFR => DcfrAlgorithm.compute_discounts(current_iteration),
             CfrAlgorithm::DCRFPlus => DcfrPlusAlgorithm.compute_discounts(current_iteration),
+            CfrAlgorithm::PDCFRPlus => PdcfrPlusAlgorithm.compute_discounts(current_iteration),
             CfrAlgorithm::SAPCFRPlus => SapcfrPlusAlgorithm.compute_discounts(current_iteration),
         };
 
@@ -60,6 +64,7 @@ impl DiscountParams {
             beta_t: params.beta_t,
             gamma_t: params.gamma_t,
             algorithm,
+            current_iteration,
         }
     }
     // Le funzioni new_dcfr, new_dcfr_plus, new_sapcfr_plus sono state rimosse
@@ -275,7 +280,29 @@ fn solve_recursive<T: Game>(
         });
 
         // compute the strategy by regret-maching algorithm
-        let mut strategy = if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+        let mut strategy = if params.algorithm == CfrAlgorithm::PDCFRPlus {
+             // PDCFR+ Strategy Calculation (Predicted Regret)
+             // Uses predicted regrets (storage4) instead of cumulative regrets
+             let mut predicted_regrets = Vec::with_capacity(num_actions * num_hands);
+
+             if game.is_compression_enabled() {
+                 // Int16 quantization mode (come richiesto dall'utente)
+                 let predicted = node.prev_regrets_compressed();
+                 let scale = node.prev_regret_scale();
+                 let decode_factor = 1.0 / i16::MAX as f32;
+
+                 for &r_pred in predicted.iter() {
+                     let v_pred = r_pred as f32 * scale * decode_factor;
+                     predicted_regrets.push(v_pred.max(0.0));
+                 }
+             } else {
+                 // Float32 mode (fallback)
+                 let predicted = node.prev_regrets();
+                 predicted_regrets.extend_from_slice(predicted);
+             }
+
+             regret_matching(&predicted_regrets, num_actions)
+        } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
              // SAPCFR+ Strategy Calculation (Explicit Regret)
              let mut explicit_regrets = Vec::with_capacity(num_actions * num_hands);
              
@@ -441,7 +468,72 @@ fn solve_recursive<T: Game>(
             let scale = node.regret_scale();
             let quantization_mode = game.quantization_mode();
 
-            if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+            if params.algorithm == CfrAlgorithm::PDCFRPlus {
+                // PDCFR+ compressed mode
+                let (cum_regret, predicted_regret) = node.regrets_and_prev_compressed_mut();
+                let decoder = scale / i16::MAX as f32;
+
+                // 1. Decode cumulative regrets and compute instantaneous regrets
+                let mut inst_regrets = Vec::with_capacity(cfv_actions.len());
+                let mut cum_vals = Vec::with_capacity(cfv_actions.len());
+
+                cfv_actions.iter().zip(&*cum_regret).for_each(|(&cfv, &r_cum)| {
+                    let log_cum = r_cum as f32 * decoder;
+                    let val_cum = if quantization_mode == QuantizationMode::Int16Log {
+                        if log_cum >= 0.0 { log_cum.exp() - 1.0 } else { -((-log_cum).exp() - 1.0) }
+                    } else {
+                        log_cum
+                    };
+                    cum_vals.push(val_cum);
+                    inst_regrets.push(cfv);
+                });
+
+                // 2. Subtract EV to get instantaneous regrets
+                inst_regrets.chunks_exact_mut(num_hands).for_each(|row| {
+                    sub_slice(row, result);
+                });
+
+                // 3. Apply locking
+                if !locking.is_empty() {
+                    inst_regrets.iter_mut().zip(locking).for_each(|(d, s)| {
+                        if s.is_sign_positive() { *d = 0.0; }
+                    })
+                }
+
+                // 4. Update cumulative with DCFR conditional discounting + RM+ clipping
+                let (alpha, beta) = (params.alpha_t, params.beta_t);
+                cum_vals.iter_mut().zip(&inst_regrets).for_each(|(reg_cum, &reg_inst)| {
+                    let coef = if reg_cum.is_sign_positive() { alpha } else { beta };
+                    *reg_cum = (*reg_cum * coef + reg_inst).max(0.0);
+                });
+
+                // 5. Compute predicted regrets for next iteration
+                let t = (params.current_iteration + 1) as f64;
+                let pow_alpha = t * t.sqrt();
+                let next_discount = (pow_alpha / (pow_alpha + 1.0)) as f32;
+
+                let mut predicted_vals = Vec::with_capacity(cum_vals.len());
+                cum_vals.iter().zip(&inst_regrets).for_each(|(&reg_cum, &reg_inst)| {
+                    predicted_vals.push((reg_cum * next_discount + reg_inst).max(0.0));
+                });
+
+                // 6. Encode cumulative and predicted regrets
+                let new_scale_cum = if quantization_mode == QuantizationMode::Int16Log {
+                    encode_signed_slice_log(cum_regret, &cum_vals)
+                } else {
+                    encode_signed_slice(cum_regret, &cum_vals)
+                };
+
+                let new_scale_pred = if quantization_mode == QuantizationMode::Int16Log {
+                    encode_signed_slice_log(predicted_regret, &predicted_vals)
+                } else {
+                    encode_signed_slice(predicted_regret, &predicted_vals)
+                };
+
+                node.set_regret_scale(new_scale_cum);
+                node.set_prev_regret_scale(new_scale_pred);
+
+            } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
                 let (cum_regret, prev_regret) = node.regrets_and_prev_compressed_mut();
                 let decoder = scale / i16::MAX as f32;
                 
@@ -613,6 +705,40 @@ fn solve_recursive<T: Game>(
                          if *x < 0.0 { *x = 0.0; }
                     });
                 }
+                CfrAlgorithm::PDCFRPlus => {
+                    // PDCFR+: Combines DCFR discounting with predictive mechanism
+                    // Storage2: cumulative regrets (Rt)
+                    // Storage4: predicted regrets (R̃t+1) for next iteration
+
+                    // 1. Calcola instantaneous regrets
+                    let mut inst_regrets = Vec::with_capacity(cfv_actions.len());
+                    inst_regrets.extend_from_slice(&cfv_actions);
+                    inst_regrets.chunks_exact_mut(num_hands).for_each(|row| {
+                        sub_slice(row, result);
+                    });
+
+                    // 2. Calcola next_discount per predicted regrets
+                    // Formula: t^1.5 / (t^1.5 + 1) con t = iterazione (1-indexed come nel paper)
+                    // current_iteration è 0-indexed, quindi aggiungo 1 per convertire
+                    let t = (params.current_iteration + 1) as f64;
+                    let pow_alpha = t * t.sqrt(); // t^1.5
+                    let next_discount = (pow_alpha / (pow_alpha + 1.0)) as f32;
+
+                    // 3. Get both cumulative and predicted regrets
+                    let (cumulative, predicted) = node.regrets_and_prev_mut();
+
+                    // 4. Update cumulative regrets + compute predicted regrets
+                    let (alpha, beta) = (params.alpha_t, params.beta_t);
+                    cumulative.iter_mut().zip(predicted.iter_mut()).zip(&inst_regrets)
+                        .for_each(|((reg_cum, reg_pred), &reg_inst)| {
+                            // Update cumulative with DCFR conditional discounting + RM+ clipping
+                            let coef = if reg_cum.is_sign_positive() { alpha } else { beta };
+                            *reg_cum = (*reg_cum * coef + reg_inst).max(0.0);
+
+                            // Compute predicted for next iteration
+                            *reg_pred = (*reg_cum * next_discount + reg_inst).max(0.0);
+                        });
+                }
                 CfrAlgorithm::SAPCFRPlus => {
                     // SAPCFR+ (Uncompressed / Float32)
                     let mut inst_regrets = Vec::with_capacity(cfv_actions.len());
@@ -636,7 +762,29 @@ fn solve_recursive<T: Game>(
     // if the current player is not `player`
     else {
         // compute the strategy by regret-matching algorithm
-        let mut cfreach_actions = if params.algorithm == CfrAlgorithm::SAPCFRPlus {
+        let mut cfreach_actions = if params.algorithm == CfrAlgorithm::PDCFRPlus {
+             // PDCFR+ Strategy Calculation (Predicted Regret) for opponent
+             let node_num_hands = game.num_private_hands(node.player());
+             let mut predicted_regrets = Vec::with_capacity(num_actions * node_num_hands);
+
+             if game.is_compression_enabled() {
+                 // Int16 quantization mode
+                 let predicted = node.prev_regrets_compressed();
+                 let scale = node.prev_regret_scale();
+                 let decode_factor = 1.0 / i16::MAX as f32;
+
+                 for &r_pred in predicted.iter() {
+                     let v_pred = r_pred as f32 * scale * decode_factor;
+                     predicted_regrets.push(v_pred.max(0.0));
+                 }
+             } else {
+                 // Float32 mode (fallback)
+                 let predicted = node.prev_regrets();
+                 predicted_regrets.extend_from_slice(predicted);
+             }
+
+             regret_matching(&predicted_regrets, num_actions)
+        } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
              // SAPCFR+ Strategy Calculation (Explicit Regret) for opponent
              let node_num_hands = game.num_private_hands(node.player());
              let mut explicit_regrets = Vec::with_capacity(num_actions * node_num_hands);

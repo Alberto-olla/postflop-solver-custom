@@ -9,6 +9,7 @@ use super::traits::*;
 pub enum CfrAlgorithmEnum {
     DCFR(DcfrAlgorithm),
     DCFRPlus(DcfrPlusAlgorithm),
+    PDCFRPlus(PdcfrPlusAlgorithm),
     SAPCFRPlus(SapcfrPlusAlgorithm),
 }
 
@@ -18,6 +19,7 @@ impl CfrAlgorithmEnum {
         match name.to_lowercase().as_str() {
             "dcfr" => Some(Self::DCFR(DcfrAlgorithm)),
             "dcfr+" | "dcfrplus" => Some(Self::DCFRPlus(DcfrPlusAlgorithm)),
+            "pdcfr+" | "pdcfrplus" => Some(Self::PDCFRPlus(PdcfrPlusAlgorithm)),
             "sapcfr+" | "sapcfrplus" => Some(Self::SAPCFRPlus(SapcfrPlusAlgorithm)),
             _ => None,
         }
@@ -29,6 +31,7 @@ impl CfrAlgorithmEnum {
         match self {
             Self::DCFR(algo) => algo.compute_discounts(iteration),
             Self::DCFRPlus(algo) => algo.compute_discounts(iteration),
+            Self::PDCFRPlus(algo) => algo.compute_discounts(iteration),
             Self::SAPCFRPlus(algo) => algo.compute_discounts(iteration),
         }
     }
@@ -38,6 +41,7 @@ impl CfrAlgorithmEnum {
         match self {
             Self::DCFR(algo) => algo.requires_storage4(),
             Self::DCFRPlus(algo) => algo.requires_storage4(),
+            Self::PDCFRPlus(algo) => algo.requires_storage4(),
             Self::SAPCFRPlus(algo) => algo.requires_storage4(),
         }
     }
@@ -47,6 +51,7 @@ impl CfrAlgorithmEnum {
         match self {
             Self::DCFR(algo) => algo.name(),
             Self::DCFRPlus(algo) => algo.name(),
+            Self::PDCFRPlus(algo) => algo.name(),
             Self::SAPCFRPlus(algo) => algo.name(),
         }
     }
@@ -102,6 +107,14 @@ mod tests {
             Some(CfrAlgorithmEnum::DCFRPlus(_))
         ));
         assert!(matches!(
+            CfrAlgorithmEnum::from_name("pdcfr+"),
+            Some(CfrAlgorithmEnum::PDCFRPlus(_))
+        ));
+        assert!(matches!(
+            CfrAlgorithmEnum::from_name("pdcfrplus"),
+            Some(CfrAlgorithmEnum::PDCFRPlus(_))
+        ));
+        assert!(matches!(
             CfrAlgorithmEnum::from_name("sapcfr+"),
             Some(CfrAlgorithmEnum::SAPCFRPlus(_))
         ));
@@ -122,10 +135,12 @@ mod tests {
     fn test_dispatch_name() {
         let dcfr = CfrAlgorithmEnum::DCFR(DcfrAlgorithm);
         let dcfr_plus = CfrAlgorithmEnum::DCFRPlus(DcfrPlusAlgorithm);
+        let pdcfr_plus = CfrAlgorithmEnum::PDCFRPlus(PdcfrPlusAlgorithm);
         let sapcfr_plus = CfrAlgorithmEnum::SAPCFRPlus(SapcfrPlusAlgorithm);
 
         assert_eq!(dcfr.name(), "DCFR");
         assert_eq!(dcfr_plus.name(), "DCFR+");
+        assert_eq!(pdcfr_plus.name(), "PDCFR+");
         assert_eq!(sapcfr_plus.name(), "SAPCFR+");
     }
 
@@ -133,10 +148,12 @@ mod tests {
     fn test_dispatch_requires_storage4() {
         let dcfr = CfrAlgorithmEnum::DCFR(DcfrAlgorithm);
         let dcfr_plus = CfrAlgorithmEnum::DCFRPlus(DcfrPlusAlgorithm);
+        let pdcfr_plus = CfrAlgorithmEnum::PDCFRPlus(PdcfrPlusAlgorithm);
         let sapcfr_plus = CfrAlgorithmEnum::SAPCFRPlus(SapcfrPlusAlgorithm);
 
         assert!(!dcfr.requires_storage4());
         assert!(!dcfr_plus.requires_storage4());
+        assert!(pdcfr_plus.requires_storage4());
         assert!(sapcfr_plus.requires_storage4());
     }
 

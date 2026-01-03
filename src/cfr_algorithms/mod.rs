@@ -8,7 +8,7 @@
 ///
 /// # Struttura
 /// - `traits`: Definizione trait CfrAlgorithmTrait e DiscountParams
-/// - `algorithms`: Implementazioni concrete (DCFR, DCFR+, SAPCFR+)
+/// - `algorithms`: Implementazioni concrete (DCFR, DCFR+, PDCFR+, SAPCFR+)
 /// - `algorithm`: Enum wrapper per dispatch statico
 ///
 /// # Esempio
@@ -27,4 +27,4 @@ pub mod algorithm;
 // Re-exports pubblici
 pub use algorithm::CfrAlgorithmEnum;
 pub use traits::{CfrAlgorithmTrait, DiscountParams};
-pub use algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+pub use algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm, PdcfrPlusAlgorithm, SapcfrPlusAlgorithm};
