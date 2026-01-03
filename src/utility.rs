@@ -214,6 +214,19 @@ pub(crate) fn encode_signed_slice(dst: &mut [i16], slice: &[f32]) -> f32 {
     scale
 }
 
+/// Helper for stochastic rounding.
+/// Instead of round(x), it returns floor(x) + 1 with probability fract(x).
+#[inline]
+fn stochastic_round(val: f32) -> i32 {
+    let floor = val.floor();
+    let fract = val - floor;
+    if rand::random::<f32>() < fract {
+        (floor as i32) + 1
+    } else {
+        floor as i32
+    }
+}
+
 /// Encodes the `f32` slice to the `u16` slice, and returns the scale.
 #[inline]
 pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
@@ -244,6 +257,23 @@ pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 
         let s_safe = if s.is_finite() { *s } else { 0.0 };
         let value = (s_safe * encoder + 0.49999997).min(u8::MAX as f32).max(0.0);
         *d = unsafe { value.to_int_unchecked::<i32>() as u8 }
+    });
+    scale
+}
+
+/// Encodes the `f32` slice to the `u8` slice (unsigned) for regrets, and returns the scale.
+/// Used for CFR+ where regrets are non-negative.
+#[inline]
+pub(crate) fn encode_unsigned_regrets_u8(dst: &mut [u8], slice: &[f32]) -> f32 {
+    let scale = slice_nonnegative_max(slice);
+    let scale = if scale.is_finite() { scale } else { 0.0 };
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = u8::MAX as f32 / scale_nonzero;
+    dst.iter_mut().zip(slice).for_each(|(d, s)| {
+        let s_safe = if s.is_finite() { *s } else { 0.0 };
+        // Clamp negative values to 0 (CFR+ Requirement)
+        let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
+        *d = stochastic_round(scaled) as u8;
     });
     scale
 }
@@ -291,7 +321,10 @@ pub(crate) fn encode_signed_i8(dst: &mut [i8], slice: &[f32]) -> f32 {
     dst.iter_mut()
         .zip(slice)
         .for_each(|(d, s)| {
-            *d = unsafe { (s * encoder).round().to_int_unchecked::<i32>() as i8 }
+            let scaled = s * encoder;
+            // Clamp to i8 range before stochastic rounding
+            let scaled_clamped = scaled.min(i8::MAX as f32).max(i8::MIN as f32);
+            *d = stochastic_round(scaled_clamped) as i8;
         });
 
     scale

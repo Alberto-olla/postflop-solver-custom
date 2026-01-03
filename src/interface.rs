@@ -330,6 +330,18 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns the 8-bit quantized cumulative regrets as unsigned (for CFR+ w/ non-negative regrets).
+    #[doc(hidden)]
+    fn regrets_u8(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized cumulative regrets as unsigned.
+    #[doc(hidden)]
+    fn regrets_u8_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
     /// Returns the 8-bit quantized counterfactual values.
     #[doc(hidden)]
     fn cfvalues_i8(&self) -> &[i8] {
@@ -500,10 +512,28 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns the 8-bit quantized previous instantaneous regrets as unsigned.
+    #[doc(hidden)]
+    fn prev_regrets_u8(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 8-bit quantized previous instantaneous regrets as unsigned.
+    #[doc(hidden)]
+    fn prev_regrets_u8_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
     /// Returns mutable references to both regrets and previous regrets (8-bit quantized).
     /// Used to avoid borrow checker issues when accessing both simultaneously.
     #[doc(hidden)]
     fn regrets_and_prev_i8_mut(&mut self) -> (&mut [i8], &mut [i8]) {
+        unreachable!()
+    }
+
+    /// Returns mutable references to both regrets and previous regrets (8-bit quantized unsigned).
+    #[doc(hidden)]
+    fn regrets_and_prev_u8_mut(&mut self) -> (&mut [u8], &mut [u8]) {
         unreachable!()
     }
 }

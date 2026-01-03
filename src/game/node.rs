@@ -170,6 +170,16 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
+    fn regrets_u8(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.storage2 as *const u8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn regrets_u8_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut u8, self.num_elements as usize) }
+    }
+
+    #[inline]
     fn cfvalues_i8(&self) -> &[i8] {
         unsafe { slice::from_raw_parts(self.storage2 as *const i8, self.num_elements as usize) }
     }
@@ -312,11 +322,31 @@ impl GameNode for PostFlopNode {
     }
 
     #[inline]
+    fn prev_regrets_u8(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.storage4 as *const u8, self.num_elements as usize) }
+    }
+
+    #[inline]
+    fn prev_regrets_u8_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut u8, self.num_elements as usize) }
+    }
+
+    #[inline]
     fn regrets_and_prev_i8_mut(&mut self) -> (&mut [i8], &mut [i8]) {
         unsafe {
             (
                 slice::from_raw_parts_mut(self.storage2 as *mut i8, self.num_elements as usize),
                 slice::from_raw_parts_mut(self.storage4 as *mut i8, self.num_elements as usize),
+            )
+        }
+    }
+
+    #[inline]
+    fn regrets_and_prev_u8_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut u8, self.num_elements as usize),
+                slice::from_raw_parts_mut(self.storage4 as *mut u8, self.num_elements as usize),
             )
         }
     }
