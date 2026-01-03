@@ -500,11 +500,11 @@ fn solve_recursive<T: Game>(
                     })
                 }
 
-                // 4. Update cumulative with DCFR conditional discounting + RM+ clipping
-                let (alpha, beta) = (params.alpha_t, params.beta_t);
+                // 4. Update cumulative with uniform discounting (like DCFR+) + RM+ clipping
+                // PDCFR+ uses uniform discounting (only alpha), NOT conditional (alpha/beta)
+                let alpha = params.alpha_t;
                 cum_vals.iter_mut().zip(&inst_regrets).for_each(|(reg_cum, &reg_inst)| {
-                    let coef = if reg_cum.is_sign_positive() { alpha } else { beta };
-                    *reg_cum = (*reg_cum * coef + reg_inst).max(0.0);
+                    *reg_cum = (*reg_cum * alpha + reg_inst).max(0.0);
                 });
 
                 // 5. Compute predicted regrets for next iteration
@@ -728,12 +728,12 @@ fn solve_recursive<T: Game>(
                     let (cumulative, predicted) = node.regrets_and_prev_mut();
 
                     // 4. Update cumulative regrets + compute predicted regrets
-                    let (alpha, beta) = (params.alpha_t, params.beta_t);
+                    // PDCFR+ uses uniform discounting (only alpha), NOT conditional (alpha/beta)
+                    let alpha = params.alpha_t;
                     cumulative.iter_mut().zip(predicted.iter_mut()).zip(&inst_regrets)
                         .for_each(|((reg_cum, reg_pred), &reg_inst)| {
-                            // Update cumulative with DCFR conditional discounting + RM+ clipping
-                            let coef = if reg_cum.is_sign_positive() { alpha } else { beta };
-                            *reg_cum = (*reg_cum * coef + reg_inst).max(0.0);
+                            // Update cumulative with uniform discounting (like DCFR+) + RM+ clipping
+                            *reg_cum = (*reg_cum * alpha + reg_inst).max(0.0);
 
                             // Compute predicted for next iteration
                             *reg_pred = (*reg_cum * next_discount + reg_inst).max(0.0);
