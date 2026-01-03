@@ -1229,7 +1229,7 @@ mod tests {
             }
 
             // Encode with stochastic rounding
-            let _scale = encode_unsigned_strategy_u8(&mut encoded, &accumulated);
+            let _scale = encode_unsigned_strategy_u8(&mut encoded, &accumulated, 0);
 
             // Decode back (simulating what happens in the solver)
             // Note: we don't actually decode here, just re-encode
@@ -1259,7 +1259,7 @@ mod tests {
         let original = vec![0.5, 0.3, 0.15, 0.05];
         let mut encoded = vec![0u8; 4];
 
-        let scale = encode_unsigned_strategy_u8(&mut encoded, &original);
+        let scale = encode_unsigned_strategy_u8(&mut encoded, &original, 0);
 
         // Decode manually (since decode function exists but might not be used)
         let decoded: Vec<f32> = encoded.iter()

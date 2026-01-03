@@ -21,7 +21,7 @@ fn all_check_all_range() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -114,7 +114,7 @@ fn one_raise_all_range() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -219,7 +219,7 @@ fn one_raise_all_range_compressed() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(true);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -326,7 +326,7 @@ fn one_raise_all_range_with_turn() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -363,7 +363,7 @@ fn one_raise_all_range_with_river() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -454,7 +454,7 @@ fn always_win() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -515,7 +515,7 @@ fn always_win_raked() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -566,7 +566,7 @@ fn always_lose() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -604,7 +604,7 @@ fn always_lose_raked() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -634,7 +634,7 @@ fn always_tie() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -670,7 +670,7 @@ fn always_tie_raked() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     game.cache_normalized_weights();
@@ -750,7 +750,7 @@ fn remove_lines() {
     let res = game.remove_lines(&lines);
     assert!(res.is_ok());
 
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     // check that the turn line is removed
     game.apply_history(&[0, 0, 2]);
@@ -804,7 +804,7 @@ fn isomorphism_monotone() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     let mut check = |history: &[usize],
@@ -867,7 +867,7 @@ fn node_locking() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     game.play(1); // all-in
     game.lock_current_strategy(&[0.25, 0.75]); // 25% fold, 75% call
     game.back_to_root();
@@ -887,7 +887,7 @@ fn node_locking() {
     assert!((strategy_oop[2] - 0.0).abs() < 1e-3); // QQ bet
     assert!((strategy_oop[3] - 1.0).abs() < 1e-3); // AA bet
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     game.play(1); // all-in
     game.lock_current_strategy(&[0.5, 0.5]); // 50% fold, 50% call
     game.back_to_root();
@@ -928,7 +928,7 @@ fn node_locking_partial() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     game.lock_current_strategy(&[0.8, 0.0, 0.0, 0.2, 0.0, 0.0]); // JJ -> 80% check, 20% all-in
 
     solve(&mut game, 1000, 0.0, false);
@@ -968,7 +968,7 @@ fn node_locking_isomorphism() {
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     game.apply_history(&[0, 0, 15, 0, 0, 14]); // Turn: Spades, River: Hearts
     game.lock_current_strategy(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]); // AhKh -> check
 
@@ -1044,7 +1044,7 @@ fn set_bunching_effect() {
     bunching_data.process(false);
     game.set_bunching_effect(&bunching_data).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     let current_ev = compute_current_ev(&game);
@@ -1097,7 +1097,7 @@ fn set_bunching_effect_always_win() {
     bunching_data.process(false);
     game.set_bunching_effect(&bunching_data).unwrap();
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     finalize(&mut game);
 
     let current_ev = compute_current_ev(&game);
@@ -1177,7 +1177,7 @@ fn solve_pio_preset_normal() {
         "memory usage: {:.2}GB",
         game.memory_usage().0 as f64 / (1024.0 * 1024.0 * 1024.0)
     );
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     solve(&mut game, 1000, 180.0 * 0.001, true);
 
@@ -1234,7 +1234,7 @@ fn solve_pio_preset_raked() {
         "memory usage: {:.2}GB",
         game.memory_usage().0 as f64 / (1024.0 * 1024.0 * 1024.0)
     );
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     solve(&mut game, 1000, 180.0 * 0.001, true);
 

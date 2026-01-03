@@ -75,11 +75,23 @@ struct StreetBetSizes {
 struct SolverSettings {
     max_iterations: usize,
     target_exploitability_pct: f32,
+    #[serde(default = "default_strategy_bits")]
+    strategy_bits: u8,
+    #[serde(default = "default_regret_bits")]
+    regret_bits: u8,
+    #[serde(default = "default_ip_bits")]
+    ip_bits: u8,
+    #[serde(default = "default_chance_bits")]
+    chance_bits: u8,
 }
 
 fn default_add_allin_threshold() -> f64 { 1.5 }
 fn default_force_allin_threshold() -> f64 { 0.15 }
 fn default_merging_threshold() -> f64 { 0.1 }
+fn default_strategy_bits() -> u8 { 16 }
+fn default_regret_bits() -> u8 { 16 }
+fn default_ip_bits() -> u8 { 16 }
+fn default_chance_bits() -> u8 { 16 }
 
 /// Load game from TOML config file
 fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
@@ -169,8 +181,14 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
     };
 
     let action_tree = ActionTree::new(tree_config).expect("Failed to build action tree");
-    let game = PostFlopGame::with_config(card_config, action_tree)
+    let mut game = PostFlopGame::with_config(card_config, action_tree)
         .expect("Failed to create game");
+
+    // Apply precision settings from TOML
+    game.set_strategy_bits(config.solver.strategy_bits);
+    game.set_regret_bits(config.solver.regret_bits);
+    game.set_ip_bits(config.solver.ip_bits);
+    game.set_chance_bits(config.solver.chance_bits);
 
     // Calculate target exploitability from percentage
     let target_expl = config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
@@ -524,5 +542,70 @@ fn test_performance_dcfr_8bit_regrets_node03_turn() {
     if time_secs < BASELINE_TIME_SECS * 0.70 { // Expect at least 30% improvement
         println!("✓ Performance IMPROVED significantly! Time reduced from {:.2}s to {:.2}s ({:.1}% reduction)",
                  BASELINE_TIME_SECS, time_secs, (1.0 - time_secs / BASELINE_TIME_SECS) * 100.0);
+    }
+}
+
+// ============================================================================
+// TEST 6: DCFR with Full Mixed-Precision Config (s16r8i8c4)
+// ============================================================================
+// This test uses the exact configuration from the TOML file:
+// strategy_bits=16, regret_bits=8, ip_bits=8, chance_bits=4
+// Matching the solve_from_config output with 160 iterations in 1.19s
+
+#[test]
+fn test_performance_dcfr_mixed_precision_s16r8i8c4() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline from user's solve_from_config run
+    const BASELINE_ITERATIONS: u32 = 160;
+    const BASELINE_TIME_SECS: f32 = 1.19;
+
+    // Tolerance: allow 20% degradation for time (to account for system variability)
+    const TIME_TOLERANCE: f32 = 1.20;
+
+    // Load game from TOML (uses TOML-specified precision settings)
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // The TOML file already has the correct settings:
+    // strategy_bits = 16, regret_bits = 8, ip_bits = 8, chance_bits = 4
+    // So we just allocate without overriding
+    game.allocate_memory();
+
+    // Print header before solving
+    println!("\n=== DCFR Mixed-Precision (s16r8i8c4) Performance ===");
+    println!("Configuration: strategy=16bit, regret=8bit, ip=8bit, chance=4bit");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(
+        final_expl <= target_expl,
+        "Failed to reach target exploitability. Got: {}, Target: {}",
+        final_expl,
+        target_expl
+    );
+
+    // WARNING: Time should not increase significantly
+    assert!(
+        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
+        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
+        BASELINE_TIME_SECS,
+        time_secs,
+        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
+    );
+
+    // SUCCESS: Print if performance improved
+    if time_secs < BASELINE_TIME_SECS * 0.90 {
+        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+                 BASELINE_TIME_SECS - time_secs,
+                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
     }
 }

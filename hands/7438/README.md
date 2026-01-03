@@ -100,23 +100,68 @@ Misc:          268.09 MB
 ✓ Solving completed in 136.57s
 
 DCFR+
+Using algorithm: DCFR+ (single discount + clipping)
+
+Memory precision configuration (estimated):
+Strategy (storage1):      16-bit  ( 1544.14 MB,  44.5%)
+Regrets (storage2/4):     16-bit  ( 1544.14 MB,  44.5%)
+IP CFValues (storage_ip): 16-bit  (  134.42 MB,   3.9%)
+Chance CFValues:          16-bit  (    3.40 MB,   0.1%)
+Misc (node arena, etc):          (  241.62 MB,   7.0%)
+
+Solving (max 500 iterations)...
+
+iteration: 160 / 500 (exploitability = 1.4716e1)
 [STOP] Reached target exploitability at iteration 160
 Current: 14.715958, Target: 15.000000
-Memory usage: 3494.19 MB
+Memory usage: 3467.72 MB
 Strategy:     1544.14 MB
 Regrets:      1544.14 MB
 IP CFVs:       134.42 MB
 Chance CFVs:     3.40 MB
-Misc:          268.09 MB
-✓ Solving completed in 111.20s
+Misc:          241.62 MB
+✓ Solving completed in 117.40s
 
 DCFR+, Regrets8bit
-[STOP] Reached target exploitability at iteration 230
-Current: 13.969757, Target: 15.000000
-Memory usage: 2722.12 MB
+Using algorithm: DCFR+ (single discount + clipping)
+
+Memory precision configuration (estimated):
+Strategy (storage1):      16-bit  ( 1544.14 MB,  57.3%)
+Regrets (storage2/4):      8-bit  (  772.07 MB,  28.6%)
+IP CFValues (storage_ip): 16-bit  (  134.42 MB,   5.0%)
+Chance CFValues:          16-bit  (    3.40 MB,   0.1%)
+Misc (node arena, etc):          (  241.62 MB,   9.0%)
+
+Solving (max 500 iterations)...
+
+iteration: 170 / 500 (exploitability = 1.3578e1)
+[STOP] Reached target exploitability at iteration 170
+Current: 13.578491, Target: 15.000000
+Memory usage: 2695.65 MB
 Strategy:     1544.14 MB
 Regrets:       772.07 MB
 IP CFVs:       134.42 MB
 Chance CFVs:     3.40 MB
-Misc:          268.09 MB
-✓ Solving completed in 422.85s
+Misc:          241.62 MB
+✓ Solving completed in 119.78s
+
+16-8-4-4
+Memory precision configuration (estimated):
+Strategy (storage1):      16-bit  ( 1544.14 MB,  59.6%)
+Regrets (storage2/4):      8-bit  (  772.07 MB,  29.8%)
+IP CFValues (storage_ip):  4-bit  (   33.61 MB,   1.3%)
+Chance CFValues:           4-bit  (    0.85 MB,   0.0%)
+Misc (node arena, etc):          (  241.62 MB,   9.3%)
+
+Solving (max 500 iterations)...
+
+iteration: 170 / 500 (exploitability = 1.3578e1)
+[STOP] Reached target exploitability at iteration 170
+Current: 13.578491, Target: 15.000000
+Memory usage: 2592.29 MB
+Strategy:     1544.14 MB
+Regrets:       772.07 MB
+IP CFVs:        33.61 MB
+Chance CFVs:     0.85 MB
+Misc:          241.62 MB
+✓ Solving completed in 123.28s

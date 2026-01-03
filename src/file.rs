@@ -290,7 +290,7 @@ mod tests {
         let action_tree = ActionTree::new(tree_config).unwrap();
         let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-        game.allocate_memory(false);
+        game.allocate_memory();
         finalize(&mut game);
 
         // save
@@ -350,7 +350,7 @@ mod tests {
         let action_tree = ActionTree::new(tree_config).unwrap();
         let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
 
-        game.allocate_memory(false);
+        game.allocate_memory();
         finalize(&mut game);
 
         // save
