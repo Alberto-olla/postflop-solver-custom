@@ -214,13 +214,26 @@ pub(crate) fn encode_signed_slice(dst: &mut [i16], slice: &[f32]) -> f32 {
     scale
 }
 
+#[inline]
+fn fast_xorshift32(seed: &mut u32) -> u32 {
+    let mut x = *seed;
+    if x == 0 { x = 0xACE1u32; } // Avoid zero seed
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *seed = x;
+    x
+}
+
 /// Helper for stochastic rounding.
 /// Instead of round(x), it returns floor(x) + 1 with probability fract(x).
 #[inline]
-fn stochastic_round(val: f32) -> i32 {
+fn stochastic_round(val: f32, seed: &mut u32) -> i32 {
     let floor = val.floor();
     let fract = val - floor;
-    if rand::random::<f32>() < fract {
+    // Use 24 bits of entropy for a high-quality fast float in [0, 1)
+    let r = (fast_xorshift32(seed) & 0xFFFFFF) as f32 / 16777216.0;
+    if r < fract {
         (floor as i32) + 1
     } else {
         floor as i32
@@ -247,16 +260,17 @@ pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
 
 /// Encodes the `f32` slice to the `u8` slice, and returns the scale.
 #[inline]
-pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 {
+pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_nonnegative_max(slice);
     // Handle NaN/Inf gracefully
     let scale = if scale.is_finite() { scale } else { 0.0 };
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = u8::MAX as f32 / scale_nonzero;
-    dst.iter_mut().zip(slice).for_each(|(d, s)| {
+    dst.iter_mut().enumerate().zip(slice).for_each(|((i, d), s)| {
         let s_safe = if s.is_finite() { *s } else { 0.0 };
         let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
-        *d = stochastic_round(scaled) as u8;
+        let mut seed = base_seed ^ (i as u32);
+        *d = stochastic_round(scaled, &mut seed) as u8;
     });
     scale
 }
@@ -264,16 +278,17 @@ pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32]) -> f32 
 /// Encodes the `f32` slice to the `u8` slice (unsigned) for regrets, and returns the scale.
 /// Used for CFR+ where regrets are non-negative.
 #[inline]
-pub(crate) fn encode_unsigned_regrets_u8(dst: &mut [u8], slice: &[f32]) -> f32 {
+pub(crate) fn encode_unsigned_regrets_u8(dst: &mut [u8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_nonnegative_max(slice);
     let scale = if scale.is_finite() { scale } else { 0.0 };
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = u8::MAX as f32 / scale_nonzero;
-    dst.iter_mut().zip(slice).for_each(|(d, s)| {
+    dst.iter_mut().enumerate().zip(slice).for_each(|((i, d), s)| {
         let s_safe = if s.is_finite() { *s } else { 0.0 };
         // Clamp negative values to 0 (CFR+ Requirement)
         let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
-        *d = stochastic_round(scaled) as u8;
+        let mut seed = base_seed ^ (i as u32);
+        *d = stochastic_round(scaled, &mut seed) as u8;
     });
     scale
 }
@@ -313,18 +328,20 @@ pub(crate) fn encode_signed_slice_log(dst: &mut [i16], slice: &[f32]) -> f32 {
 /// Uses signed quantization: maps [-max_abs, max_abs] to [-127, 127].
 /// Note: We use i8::MAX (127) instead of full range to avoid overflow issues.
 #[inline]
-pub(crate) fn encode_signed_i8(dst: &mut [i8], slice: &[f32]) -> f32 {
+pub(crate) fn encode_signed_i8(dst: &mut [i8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_absolute_max(slice);
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = i8::MAX as f32 / scale_nonzero;  // encoder = 127 / max_abs
 
     dst.iter_mut()
+        .enumerate()
         .zip(slice)
-        .for_each(|(d, s)| {
+        .for_each(|((i, d), s)| {
             let scaled = s * encoder;
             // Clamp to i8 range before stochastic rounding
             let scaled_clamped = scaled.min(i8::MAX as f32).max(i8::MIN as f32);
-            *d = stochastic_round(scaled_clamped) as i8;
+            let mut seed = base_seed ^ (i as u32);
+            *d = stochastic_round(scaled_clamped, &mut seed) as i8;
         });
 
     scale
@@ -341,7 +358,7 @@ pub(crate) fn decode_signed_i8(src: &[i8], scale: f32) -> Vec<f32> {
 /// Uses signed quantization: maps [-max_abs, max_abs] to [-7, 7].
 /// Two 4-bit values are packed into one `u8`.
 #[inline]
-pub(crate) fn encode_signed_i4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
+pub(crate) fn encode_signed_i4_packed(dst: &mut [u8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_absolute_max(slice);
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = 7.0 / scale_nonzero;
@@ -349,12 +366,14 @@ pub(crate) fn encode_signed_i4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
     for i in 0..dst.len() {
         let s1 = slice[i * 2];
         let scaled1 = (s1 * encoder).min(7.0).max(-7.0);
-        let val1 = stochastic_round(scaled1) as i8;
+        let mut seed1 = base_seed ^ (i as u32 * 2);
+        let val1 = stochastic_round(scaled1, &mut seed1) as i8;
 
         let val2 = if i * 2 + 1 < slice.len() {
             let s2 = slice[i * 2 + 1];
             let scaled2 = (s2 * encoder).min(7.0).max(-7.0);
-            stochastic_round(scaled2) as i8
+            let mut seed2 = base_seed ^ (i as u32 * 2 + 1);
+            stochastic_round(scaled2, &mut seed2) as i8
         } else {
             0
         };
@@ -387,7 +406,7 @@ pub(crate) fn decode_signed_i4_packed(src: &[u8], scale: f32, len: usize) -> Vec
 /// Encodes the `f32` slice to the `u8` slice (unsigned packed 4-bit), and returns the scale.
 /// Used for non-negative regrets (DCFR+). Maps [0, max] to [0, 15].
 #[inline]
-pub(crate) fn encode_unsigned_u4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
+pub(crate) fn encode_unsigned_u4_packed(dst: &mut [u8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_nonnegative_max(slice);
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = 15.0 / scale_nonzero;
@@ -395,12 +414,14 @@ pub(crate) fn encode_unsigned_u4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
     for i in 0..dst.len() {
         let s1 = slice[i * 2];
         let scaled1 = (s1 * encoder).min(15.0).max(0.0);
-        let val1 = stochastic_round(scaled1) as u8;
+        let mut seed1 = base_seed ^ (i as u32 * 2);
+        let val1 = stochastic_round(scaled1, &mut seed1) as u8;
 
         let val2 = if i * 2 + 1 < slice.len() {
             let s2 = slice[i * 2 + 1];
             let scaled2 = (s2 * encoder).min(15.0).max(0.0);
-            stochastic_round(scaled2) as u8
+            let mut seed2 = base_seed ^ (i as u32 * 2 + 1);
+            stochastic_round(scaled2, &mut seed2) as u8
         } else {
             0
         };
@@ -653,11 +674,13 @@ fn compute_cfvalue_recursive<T: Game>(
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
                 8 => {
-                    let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result);
+                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result, seed);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
                 4 => {
-                    let cfv_scale = encode_signed_i4_packed(node.cfvalues_chance_i4_packed_mut(), result);
+                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let cfv_scale = encode_signed_i4_packed(node.cfvalues_chance_i4_packed_mut(), result, seed);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
                 _ => panic!("Invalid chance_bits: {}. Valid values: 4, 8, 16, 32", game.chance_bits()),
@@ -717,7 +740,8 @@ fn compute_cfvalue_recursive<T: Game>(
                     node.set_cfvalue_scale(cfv_scale);
                 }
                 8 => {
-                    let cfv_scale = encode_signed_i8(node.cfvalues_i8_mut(), &cfv_actions);
+                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let cfv_scale = encode_signed_i8(node.cfvalues_i8_mut(), &cfv_actions, seed);
                     node.set_cfvalue_scale(cfv_scale);
                 }
                 _ => panic!("Invalid regret_bits (for cfvalues): {}. Valid values: 8, 16, 32", game.regret_bits()),
@@ -794,11 +818,13 @@ fn compute_cfvalue_recursive<T: Game>(
                  node.set_cfvalue_ip_scale(cfv_scale);
             }
             8 => {
-                 let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result);
+                 let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                 let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result, seed);
                  node.set_cfvalue_ip_scale(cfv_scale);
             }
             4 => {
-                 let cfv_scale = encode_signed_i4_packed(node.cfvalues_ip_i4_packed_mut(), result);
+                 let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                 let cfv_scale = encode_signed_i4_packed(node.cfvalues_ip_i4_packed_mut(), result, seed);
                  node.set_cfvalue_ip_scale(cfv_scale);
             }
             _ => panic!("Invalid ip_bits: {}. Valid values: 4, 8, 16, 32", game.ip_bits()),

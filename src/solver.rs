@@ -577,7 +577,8 @@ fn solve_recursive<T: Game>(
                     })
                 }
 
-                let new_scale = encode_unsigned_strategy_u8(cum_strategy, &strategy);
+                let seed = params.current_iteration.wrapping_add(player as u32);
+                let new_scale = encode_unsigned_strategy_u8(cum_strategy, &strategy, seed);
                 node.set_strategy_scale(new_scale);
             }
             _ => {
@@ -637,8 +638,9 @@ fn solve_recursive<T: Game>(
                      });
 
                      // 6. Encode
-                     let new_scale_cum = encode_signed_i8(cum_regret, &cum_vals);
-                     let new_scale_pred = encode_signed_i8(predicted_regret, &predicted_vals);
+                     let seed = params.current_iteration.wrapping_add(player as u32);
+                     let new_scale_cum = encode_signed_i8(cum_regret, &cum_vals, seed);
+                     let new_scale_pred = encode_signed_i8(predicted_regret, &predicted_vals, seed ^ 0x55555555);
 
                      node.set_regret_scale(new_scale_cum);
                      node.set_prev_regret_scale(new_scale_pred);
@@ -676,8 +678,9 @@ fn solve_recursive<T: Game>(
                      });
 
                      // Encode
-                     let new_scale_prev = encode_signed_i8(prev_regret, &prev_vals);
-                     let new_scale = encode_signed_i8(cum_regret, &cfv_actions);
+                     let seed = params.current_iteration.wrapping_add(player as u32);
+                     let new_scale_prev = encode_signed_i8(prev_regret, &prev_vals, seed ^ 0x55555555);
+                     let new_scale = encode_signed_i8(cum_regret, &cfv_actions, seed);
 
                      node.set_prev_regret_scale(new_scale_prev);
                      node.set_regret_scale(new_scale);
@@ -737,18 +740,22 @@ fn solve_recursive<T: Game>(
 
                      if can_use_dcfr_plus {
                          if game.quantization_mode() == QuantizationMode::Int4Packed {
-                             let new_scale = encode_unsigned_u4_packed(node.regrets_u4_packed_mut(), &cfv_actions);
+                             let seed = params.current_iteration.wrapping_add(player as u32);
+                             let new_scale = encode_unsigned_u4_packed(node.regrets_u4_packed_mut(), &cfv_actions, seed);
                              node.set_regret_scale(new_scale);
                          } else {
-                             let new_scale = encode_unsigned_regrets_u8(node.regrets_u8_mut(), &cfv_actions);
+                             let seed = params.current_iteration.wrapping_add(player as u32);
+                             let new_scale = encode_unsigned_regrets_u8(node.regrets_u8_mut(), &cfv_actions, seed);
                              node.set_regret_scale(new_scale);
                          }
                      } else {
                          if game.quantization_mode() == QuantizationMode::Int4Packed {
-                             let new_scale = encode_signed_i4_packed(node.regrets_i4_packed_mut(), &cfv_actions);
+                             let seed = params.current_iteration.wrapping_add(player as u32);
+                             let new_scale = encode_signed_i4_packed(node.regrets_i4_packed_mut(), &cfv_actions, seed);
                              node.set_regret_scale(new_scale);
                          } else {
-                             let new_scale = encode_signed_i8(node.regrets_i8_mut(), &cfv_actions);
+                             let seed = params.current_iteration.wrapping_add(player as u32);
+                             let new_scale = encode_signed_i8(node.regrets_i8_mut(), &cfv_actions, seed);
                              node.set_regret_scale(new_scale);
                          }
                      }

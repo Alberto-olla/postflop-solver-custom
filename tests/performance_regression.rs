@@ -198,7 +198,7 @@ fn test_performance_dcfr_16bit_node03_turn() {
 
     // Configure for DCFR with 16-bit
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
-    game.allocate_memory(true); // 16-bit mode
+    game.allocate_memory(); // 16-bit mode
 
     // Print header before solving
     println!("\n=== DCFR 16-bit Performance ===");
@@ -257,8 +257,8 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
 
     // Configure for DCFR+ with 16-bit
-    game.set_cfr_algorithm(CfrAlgorithm::DCRFPlus);
-    game.allocate_memory(true); // 16-bit mode
+    game.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+    game.allocate_memory(); // 16-bit mode
 
     // Print header before solving
     println!("\n=== DCFR+ 16-bit Performance ===");
@@ -318,7 +318,7 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
 
     // Configure for SAPCFR+ with 16-bit
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
-    game.allocate_memory(true); // 16-bit mode
+    game.allocate_memory(); // 16-bit mode
 
     // Print header before solving
     println!("\n=== SAPCFR+ 16-bit Performance ===");
@@ -378,7 +378,7 @@ fn test_performance_pdcfrplus_16bit_node03_turn() {
 
     // Configure for PDCFR+ with 16-bit
     game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
-    game.allocate_memory(true); // 16-bit mode
+    game.allocate_memory(); // 16-bit mode
 
     // Print header before solving
     println!("\n=== PDCFR+ 16-bit Performance ===");
@@ -432,15 +432,15 @@ fn test_compare_all_algorithms_node03_turn() {
     // Test DCFR
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
-    game.allocate_memory(true);
+    game.allocate_memory();
     let start = Instant::now();
     let dcfr_expl = solve(&mut game, max_iters, target_expl, true);
     let dcfr_time = start.elapsed();
 
     // Test DCFR+
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
-    game.set_cfr_algorithm(CfrAlgorithm::DCRFPlus);
-    game.allocate_memory(true);
+    game.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+    game.allocate_memory();
     let start = Instant::now();
     let dcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
     let dcfrplus_time = start.elapsed();
@@ -448,7 +448,7 @@ fn test_compare_all_algorithms_node03_turn() {
     // Test PDCFR+
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
     game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
-    game.allocate_memory(true);
+    game.allocate_memory();
     let start = Instant::now();
     let pdcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
     let pdcfrplus_time = start.elapsed();
@@ -456,7 +456,7 @@ fn test_compare_all_algorithms_node03_turn() {
     // Test SAPCFR+
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
-    game.allocate_memory(true);
+    game.allocate_memory();
     let start = Instant::now();
     let sapcfr_expl = solve(&mut game, max_iters, target_expl, true);
     let sapcfr_time = start.elapsed();
@@ -480,4 +480,49 @@ fn test_compare_all_algorithms_node03_turn() {
     assert!(dcfrplus_expl <= target_expl);
     assert!(pdcfrplus_expl <= target_expl);
     assert!(sapcfr_expl <= target_expl);
+}
+
+// ============================================================================
+// TEST 5: DCFR with 8-bit regrets (Storage 8-bit, Strategy 16-bit)
+// ============================================================================
+
+#[test]
+fn test_performance_dcfr_8bit_regrets_node03_turn() {
+    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
+
+    // Baseline from user report was 2.64s (with thread_rng)
+    // We expect this to be much faster now, potentially closer to 1.18s (16-bit)
+    const BASELINE_TIME_SECS: f32 = 2.64; 
+
+    // Load game from TOML
+    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
+
+    // Configure for DCFR with 8-bit regrets
+    game.set_cfr_algorithm(CfrAlgorithm::DCFR);
+    
+    // Override regret precision to 8-bit
+    game.set_regret_bits(8);
+    game.set_strategy_bits(16);
+    game.allocate_memory();
+
+    println!("\n=== DCFR 8-bit Regrets Performance ===");
+    println!("Baseline (thread_rng): {:.2}s", BASELINE_TIME_SECS);
+
+    // Solve with timing
+    let start = Instant::now();
+    let final_expl = solve(&mut game, max_iters, target_expl, true);
+    let duration = start.elapsed();
+    let time_secs = duration.as_secs_f32();
+
+    println!("Current:  Time {:.2}s", time_secs);
+    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+
+    // Assertions
+    assert!(final_expl <= target_expl);
+    
+    // Verification of speedup
+    if time_secs < BASELINE_TIME_SECS * 0.70 { // Expect at least 30% improvement
+        println!("✓ Performance IMPROVED significantly! Time reduced from {:.2}s to {:.2}s ({:.1}% reduction)",
+                 BASELINE_TIME_SECS, time_secs, (1.0 - time_secs / BASELINE_TIME_SECS) * 100.0);
+    }
 }
