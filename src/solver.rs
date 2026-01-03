@@ -88,6 +88,7 @@ pub fn solve<T: Game>(
     let mut exploitability = compute_exploitability(game);
 
     if print_progress {
+        println!(); // Newline per separare dall'output di cargo test
         print!("iteration: 0 / {max_num_iterations} ");
         print!("(exploitability = {exploitability:.4e})");
         io::stdout().flush().unwrap();
@@ -96,8 +97,9 @@ pub fn solve<T: Game>(
     for t in 0..max_num_iterations {
         if exploitability <= target_exploitability {
             if print_progress {
-                eprintln!("\n[STOP] Reached target exploitability at iteration {}", t);
-                eprintln!("       Current: {:.6}, Target: {:.6}", exploitability, target_exploitability);
+                println!("\n[STOP] Reached target exploitability at iteration {}", t);
+                println!("       Current: {:.6}, Target: {:.6}", exploitability, target_exploitability);
+                io::stdout().flush().unwrap();
             }
             break;
         }
@@ -131,6 +133,7 @@ pub fn solve<T: Game>(
 
     if print_progress {
         println!();
+        println!(); // Newline extra per separare dal prossimo test
         io::stdout().flush().unwrap();
     }
 

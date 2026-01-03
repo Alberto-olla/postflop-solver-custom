@@ -121,13 +121,36 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
         river,
     };
 
-    // Parse bet sizes - simple version (just convert directly without preset expansion)
-    let parse_simple_sizes = |street: &StreetBetSizes| -> [BetSizeOptions; 2] {
-        [
-            BetSizeOptions::try_from((street.oop_bet.as_str(), street.oop_raise.as_str())).unwrap(),
-            BetSizeOptions::try_from((street.ip_bet.as_str(), street.ip_raise.as_str())).unwrap(),
-        ]
-    };
+    // Parse bet sizes with preset expansion (uses unified logic from src/preset.rs)
+    let flop_bet_sizes = parse_bet_sizes_with_preset(
+        &config.bet_sizes.flop.oop_bet,
+        &config.bet_sizes.flop.oop_raise,
+        &config.bet_sizes.flop.ip_bet,
+        &config.bet_sizes.flop.ip_raise,
+        config.tree.starting_pot,
+        config.tree.effective_stack,
+        "flop",
+    ).expect("Invalid flop bet sizes");
+
+    let turn_bet_sizes = parse_bet_sizes_with_preset(
+        &config.bet_sizes.turn.oop_bet,
+        &config.bet_sizes.turn.oop_raise,
+        &config.bet_sizes.turn.ip_bet,
+        &config.bet_sizes.turn.ip_raise,
+        config.tree.starting_pot,
+        config.tree.effective_stack,
+        "turn",
+    ).expect("Invalid turn bet sizes");
+
+    let river_bet_sizes = parse_bet_sizes_with_preset(
+        &config.bet_sizes.river.oop_bet,
+        &config.bet_sizes.river.oop_raise,
+        &config.bet_sizes.river.ip_bet,
+        &config.bet_sizes.river.ip_raise,
+        config.tree.starting_pot,
+        config.tree.effective_stack,
+        "river",
+    ).expect("Invalid river bet sizes");
 
     let tree_config = TreeConfig {
         initial_state,
@@ -135,9 +158,9 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
         effective_stack: config.tree.effective_stack,
         rake_rate: config.tree.rake_rate,
         rake_cap: config.tree.rake_cap,
-        flop_bet_sizes: parse_simple_sizes(&config.bet_sizes.flop),
-        turn_bet_sizes: parse_simple_sizes(&config.bet_sizes.turn),
-        river_bet_sizes: parse_simple_sizes(&config.bet_sizes.river),
+        flop_bet_sizes,
+        turn_bet_sizes,
+        river_bet_sizes,
         add_allin_threshold: config.tree.add_allin_threshold,
         force_allin_threshold: config.tree.force_allin_threshold,
         merging_threshold: config.tree.merging_threshold,
@@ -176,14 +199,16 @@ fn test_performance_dcfr_16bit_node03_turn() {
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
     game.allocate_memory(true); // 16-bit mode
 
+    // Print header before solving
+    println!("\n=== DCFR 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+
     // Solve with timing
     let start = Instant::now();
     let final_expl = solve(&mut game, max_iters, target_expl, true);
     let duration = start.elapsed();
     let time_secs = duration.as_secs_f32();
 
-    println!("\n=== DCFR 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
     println!("Current:  Time {:.2}s", time_secs);
     println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
 
@@ -234,14 +259,16 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
     game.set_cfr_algorithm(CfrAlgorithm::DCRFPlus);
     game.allocate_memory(true); // 16-bit mode
 
+    // Print header before solving
+    println!("\n=== DCFR+ 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+
     // Solve with timing
     let start = Instant::now();
     let final_expl = solve(&mut game, max_iters, target_expl, true);
     let duration = start.elapsed();
     let time_secs = duration.as_secs_f32();
 
-    println!("\n=== DCFR+ 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
     println!("Current:  Time {:.2}s", time_secs);
     println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
 
@@ -292,14 +319,16 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
     game.allocate_memory(true); // 16-bit mode
 
+    // Print header before solving
+    println!("\n=== SAPCFR+ 16-bit Performance ===");
+    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+
     // Solve with timing
     let start = Instant::now();
     let final_expl = solve(&mut game, max_iters, target_expl, true);
     let duration = start.elapsed();
     let time_secs = duration.as_secs_f32();
 
-    println!("\n=== SAPCFR+ 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
     println!("Current:  Time {:.2}s", time_secs);
     println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
 
