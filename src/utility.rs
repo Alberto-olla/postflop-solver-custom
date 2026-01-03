@@ -337,6 +337,53 @@ pub(crate) fn decode_signed_i8(src: &[i8], scale: f32) -> Vec<f32> {
     src.iter().map(|&x| x as f32 * decoder).collect()
 }
 
+/// Encodes the `f32` slice to the `u8` slice for signed values (packed 4-bit), and returns the scale.
+/// Uses signed quantization: maps [-max_abs, max_abs] to [-7, 7].
+/// Two 4-bit values are packed into one `u8`.
+#[inline]
+pub(crate) fn encode_signed_i4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
+    let scale = slice_absolute_max(slice);
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = 7.0 / scale_nonzero;
+
+    for i in 0..dst.len() {
+        let s1 = slice[i * 2];
+        let scaled1 = (s1 * encoder).min(7.0).max(-7.0);
+        let val1 = stochastic_round(scaled1) as i8;
+
+        let val2 = if i * 2 + 1 < slice.len() {
+            let s2 = slice[i * 2 + 1];
+            let scaled2 = (s2 * encoder).min(7.0).max(-7.0);
+            stochastic_round(scaled2) as i8
+        } else {
+            0
+        };
+
+        dst[i] = (val1 as u8 & 0x0F) | ((val2 as u8 & 0x0F) << 4);
+    }
+
+    scale
+}
+
+/// Decodes the `u8` slice (packed 4-bit) to `f32` for signed values.
+#[inline]
+pub(crate) fn decode_signed_i4_packed(src: &[u8], scale: f32, len: usize) -> Vec<f32> {
+    let decoder = scale / 7.0;
+    let mut dst = Vec::with_capacity(len);
+    for i in 0..len {
+        let byte = src[i / 2];
+        let nibble = if i % 2 == 0 {
+            byte & 0x0F
+        } else {
+            byte >> 4
+        };
+        // Sign extension
+        let val = ((nibble << 4) as i8) >> 4;
+        dst.push(val as f32 * decoder);
+    }
+    dst
+}
+
 /// Applies the given swap to the given slice.
 #[inline]
 pub(crate) fn apply_swap<T>(slice: &mut [T], swap_list: &[(u16, u16)]) {
@@ -564,7 +611,11 @@ fn compute_cfvalue_recursive<T: Game>(
                     let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
-                _ => panic!("Invalid chance_bits: {}. Valid values: 8, 16, 32", game.chance_bits()),
+                4 => {
+                    let cfv_scale = encode_signed_i4_packed(node.cfvalues_chance_i4_packed_mut(), result);
+                    node.set_cfvalue_chance_scale(cfv_scale);
+                }
+                _ => panic!("Invalid chance_bits: {}. Valid values: 4, 8, 16, 32", game.chance_bits()),
             }
         }
     }

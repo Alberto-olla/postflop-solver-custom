@@ -756,6 +756,12 @@ impl PostFlopGame {
                         let scale = node.cfvalue_chance_scale();
                         decode_signed_i8(slice, scale)
                     }
+                    4 => {
+                        // 4-bit mode: use packed u8
+                        let slice = node.cfvalues_chance_i4_packed();
+                        let scale = node.cfvalue_chance_scale();
+                        decode_signed_i4_packed(slice, scale, node.num_actions() * self.num_private_hands(player))
+                    }
                     _ => {
                         // 16-bit mode (default): use i16
                         let slice = node.cfvalues_chance_compressed();

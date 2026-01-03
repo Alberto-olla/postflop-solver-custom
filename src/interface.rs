@@ -305,6 +305,18 @@ pub trait GameNode: Send + Sync {
         unreachable!()
     }
 
+    /// Returns the 4-bit packed buffer for counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_chance_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed buffer for counterfactual values.
+    #[doc(hidden)]
+    fn cfvalues_chance_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
     // 8-bit quantization methods
     /// Returns the 8-bit quantized strategy.
     #[doc(hidden)]

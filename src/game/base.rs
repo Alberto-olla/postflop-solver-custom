@@ -491,16 +491,21 @@ impl PostFlopGame {
             32 => 4,  // f32
             16 => 2,  // i16
             8 => 1,   // i8
-            _ => panic!("Invalid chance_bits: {}. Valid values: 8, 16, 32", self.chance_bits),
+            4 => 0,   // Special case: packed
+            _ => panic!("Invalid chance_bits: {}. Valid values: 4, 8, 16, 32", self.chance_bits),
         };
 
         // Calculate storage size for strategy
         let storage1_bytes = (strategy_bytes_per_elem * self.num_storage) as usize;
+        let storage_chance_bytes = match self.chance_bits {
+            4 => ((self.num_storage_chance + 1) / 2) as usize,
+            _ => (chance_bytes_per_elem * self.num_storage_chance) as usize,
+        };
 
         if storage1_bytes > isize::MAX as usize
             || regret_bytes_per_elem * self.num_storage > isize::MAX as u64
             || ip_bytes_per_elem * self.num_storage_ip > isize::MAX as u64
-            || chance_bytes_per_elem * self.num_storage_chance > isize::MAX as u64
+            || storage_chance_bytes as u64 > isize::MAX as u64
         {
             panic!("Memory usage exceeds maximum size");
         }
@@ -525,7 +530,6 @@ impl PostFlopGame {
         self.clear_storage();
         let storage2_bytes = (regret_bytes_per_elem * self.num_storage) as usize;   // Regrets
         let storage_ip_bytes = (ip_bytes_per_elem * self.num_storage_ip) as usize;  // IP cfvalues
-        let storage_chance_bytes = (chance_bytes_per_elem * self.num_storage_chance) as usize;
 
         self.storage1 = vec![0; storage1_bytes];
         self.storage2 = vec![0; storage2_bytes];
@@ -694,11 +698,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            32 | 16 | 8 => {
+            32 | 16 | 8 | 4 => {
                 self.chance_bits = bits;
             }
             _ => {
-                panic!("Invalid chance_bits: {}. Valid values: 32, 16, 8", bits);
+                panic!("Invalid chance_bits: {}. Valid values: 32, 16, 8, 4", bits);
             }
         }
     }
@@ -1911,12 +1915,14 @@ impl PostFlopGame {
         let strategy_bytes = match self.strategy_bits {
             32 => 4,
             16 => 2,
+            8 => 1,
             _ => 2,
         };
 
         let regrets_bytes = match self.regret_bits {
             32 => 4,
             16 => 2,
+            8 => 1,
             _ => 2,
         };
 
@@ -1931,6 +1937,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
+            4 => 0, // Special case
             _ => 2,
         };
 
@@ -1950,7 +1957,11 @@ impl PostFlopGame {
                     let ptr = self.storage_chance.as_mut_ptr();
                     node.storage1 = ptr.add(chance_counter);
                 }
-                chance_counter += chance_bytes * node.num_elements as usize;
+                if self.chance_bits == 4 {
+                    chance_counter += (node.num_elements as usize + 1) / 2;
+                } else {
+                    chance_counter += chance_bytes * node.num_elements as usize;
+                }
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;

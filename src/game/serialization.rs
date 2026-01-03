@@ -91,6 +91,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
+            4 => 0, // Special case
             _ => 2,
         };
 
@@ -136,7 +137,11 @@ impl PostFlopGame {
             }
             if num_storage[3] == 0 && node.is_chance() {
                 let offset = unsafe { node.storage1.offset_from(self.storage_chance.as_ptr()) };
-                let len = chance_bytes * node.num_elements as usize;
+                let len = if self.chance_bits == 4 {
+                    (node.num_elements as usize + 1) / 2
+                } else {
+                    chance_bytes * node.num_elements as usize
+                };
                 num_storage[3] = offset as usize + len;
             }
         }
@@ -280,9 +285,14 @@ impl<C> Decode<C> for PostFlopGame {
                 num_bytes
             };
 
+            let storage_chance_bytes = match game.chance_bits {
+                4 => ((game.num_storage_chance + 1) / 2) as usize,
+                _ => (chance_bytes * game.num_storage_chance) as usize,
+            };
+
             game.storage2 = vec![0; (num_bytes * game.num_storage) as usize];
             game.storage_ip = vec![0; (num_bytes * game.num_storage_ip) as usize];
-            game.storage_chance = vec![0; (chance_bytes * game.num_storage_chance) as usize];
+            game.storage_chance = vec![0; storage_chance_bytes];
         }
 
         // store base pointers
