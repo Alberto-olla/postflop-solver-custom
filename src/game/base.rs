@@ -477,7 +477,8 @@ impl PostFlopGame {
             32 => 4,  // f32
             16 => 2,  // i16
             8 => 1,   // i8
-            _ => panic!("Invalid regret_bits: {}. Valid values: 8, 16, 32", self.regret_bits),
+            4 => 0,   // Special case: packed
+            _ => panic!("Invalid regret_bits: {}. Valid values: 4, 8, 16, 32", self.regret_bits),
         };
 
         let ip_bytes_per_elem = match self.ip_bits {
@@ -525,11 +526,15 @@ impl PostFlopGame {
                 }
             },
             8 => QuantizationMode::Int8,
+            4 => QuantizationMode::Int4Packed,
             _ => QuantizationMode::Int16,
         };
 
         self.clear_storage();
-        let storage2_bytes = (regret_bytes_per_elem * self.num_storage) as usize;   // Regrets
+        let storage2_bytes = match self.regret_bits {
+            4 => ((self.num_storage + 1) / 2) as usize,
+            _ => (regret_bytes_per_elem * self.num_storage) as usize,
+        };
         let storage_ip_bytes = match self.ip_bits {
             4 => ((self.num_storage_ip + 1) / 2) as usize,
             _ => (ip_bytes_per_elem * self.num_storage_ip) as usize,
@@ -541,7 +546,10 @@ impl PostFlopGame {
         self.storage_chance = vec![0; storage_chance_bytes];
 
         if self.cfr_algorithm.requires_storage4() {
-            let storage4_bytes = (regret_bytes_per_elem * self.num_storage) as usize;
+            let storage4_bytes = match self.regret_bits {
+                4 => ((self.num_storage + 1) / 2) as usize,
+                _ => (regret_bytes_per_elem * self.num_storage) as usize,
+            };
             self.storage4 = vec![0; storage4_bytes];
         }
 
@@ -728,11 +736,11 @@ impl PostFlopGame {
         }
 
         match bits {
-            16 | 32 | 8 => {
+            32 | 16 | 8 | 4 => {
                 self.regret_bits = bits;
             }
             _ => {
-                panic!("Invalid regret_bits: {}. Valid values: 8, 16, 32", bits);
+                panic!("Invalid regret_bits: {}. Valid values: 4, 8, 16, 32", bits);
             }
         }
     }
@@ -1970,8 +1978,6 @@ impl PostFlopGame {
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;
                 node.scale2 = 1.0;
-                node.scale1 = 1.0;
-                node.scale2 = 1.0;
                 node.scale3 = 1.0;
                 node.scale4 = 1.0;
             } else {
@@ -1988,14 +1994,22 @@ impl PostFlopGame {
                     }
                 }
                 strategy_counter += strategy_bytes * node.num_elements as usize;
-                regrets_counter += regrets_bytes * node.num_elements as usize;
+                if self.regret_bits == 4 {
+                    regrets_counter += (node.num_elements as usize + 1) / 2;
+                } else {
+                    regrets_counter += regrets_bytes * node.num_elements as usize;
+                }
                 if self.ip_bits == 4 {
                     ip_counter += (node.num_elements_ip as usize + 1) / 2;
                 } else {
                     ip_counter += ip_bytes * node.num_elements_ip as usize;
                 }
                 if use_storage4 {
-                    storage4_counter += regrets_bytes * node.num_elements as usize;
+                    if self.regret_bits == 4 {
+                        storage4_counter += (node.num_elements as usize + 1) / 2;
+                    } else {
+                        storage4_counter += regrets_bytes * node.num_elements as usize;
+                    }
                 }
                 // Initialize scale factors to 1.0 (will be updated on first write)
                 node.scale1 = 1.0;

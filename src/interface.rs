@@ -332,13 +332,25 @@ pub trait GameNode: Send + Sync {
     // 8-bit quantization methods
     /// Returns the 8-bit quantized strategy.
     #[doc(hidden)]
-    fn strategy_i8(&self) -> &[u8] {
+    fn strategy_u8(&self) -> &[u8] {
         unreachable!()
     }
 
     /// Returns the mutable reference to the 8-bit quantized strategy.
     #[doc(hidden)]
-    fn strategy_i8_mut(&mut self) -> &mut [u8] {
+    fn strategy_u8_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit packed strategy.
+    #[doc(hidden)]
+    fn strategy_u4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed strategy.
+    #[doc(hidden)]
+    fn strategy_u4_packed_mut(&mut self) -> &mut [u8] {
         unreachable!()
     }
 
@@ -558,6 +570,67 @@ pub trait GameNode: Send + Sync {
     /// Returns mutable references to both regrets and previous regrets (8-bit quantized unsigned).
     #[doc(hidden)]
     fn regrets_and_prev_u8_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+        unreachable!()
+    }
+
+    // 4-bit quantization methods
+    /// Returns the 4-bit packed cumulative regrets (signed).
+    #[doc(hidden)]
+    fn regrets_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed cumulative regrets (signed).
+    #[doc(hidden)]
+    fn regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit packed cumulative regrets (unsigned).
+    #[doc(hidden)]
+    fn regrets_u4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed cumulative regrets (unsigned).
+    #[doc(hidden)]
+    fn regrets_u4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit packed previous instantaneous regrets (signed).
+    #[doc(hidden)]
+    fn prev_regrets_i4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed previous instantaneous regrets (signed).
+    #[doc(hidden)]
+    fn prev_regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns the 4-bit packed previous instantaneous regrets (unsigned).
+    #[doc(hidden)]
+    fn prev_regrets_u4_packed(&self) -> &[u8] {
+        unreachable!()
+    }
+
+    /// Returns the mutable reference to the 4-bit packed previous instantaneous regrets (unsigned).
+    #[doc(hidden)]
+    fn prev_regrets_u4_packed_mut(&mut self) -> &mut [u8] {
+        unreachable!()
+    }
+
+    /// Returns mutable references to both regrets and previous regrets (4-bit packed signed).
+    #[doc(hidden)]
+    fn regrets_and_prev_i4_packed_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+        unreachable!()
+    }
+
+    /// Returns mutable references to both regrets and previous regrets (4-bit packed unsigned).
+    #[doc(hidden)]
+    fn regrets_and_prev_u4_packed_mut(&mut self) -> (&mut [u8], &mut [u8]) {
         unreachable!()
     }
 }

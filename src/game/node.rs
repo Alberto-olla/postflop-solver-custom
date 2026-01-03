@@ -150,12 +150,12 @@ impl GameNode for PostFlopNode {
 
     // 8-bit quantization methods
     #[inline]
-    fn strategy_i8(&self) -> &[u8] {
+    fn strategy_u8(&self) -> &[u8] {
         unsafe { slice::from_raw_parts(self.storage1 as *const u8, self.num_elements as usize) }
     }
 
     #[inline]
-    fn strategy_i8_mut(&mut self) -> &mut [u8] {
+    fn strategy_u8_mut(&mut self) -> &mut [u8] {
         unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u8, self.num_elements as usize) }
     }
 
@@ -378,6 +378,89 @@ impl GameNode for PostFlopNode {
     #[inline]
     fn enable_parallelization(&self) -> bool {
         self.river == NOT_DEALT
+    }
+
+    // 4-bit quantization methods
+    #[inline]
+    fn regrets_i4_packed(&self) -> &[u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage2 as *const u8, len) }
+    }
+
+    #[inline]
+    fn regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut u8, len) }
+    }
+
+    #[inline]
+    fn regrets_u4_packed(&self) -> &[u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage2 as *const u8, len) }
+    }
+
+    #[inline]
+    fn regrets_u4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage2 as *mut u8, len) }
+    }
+
+    #[inline]
+    fn prev_regrets_i4_packed(&self) -> &[u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage4 as *const u8, len) }
+    }
+
+    #[inline]
+    fn prev_regrets_i4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut u8, len) }
+    }
+
+    #[inline]
+    fn prev_regrets_u4_packed(&self) -> &[u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage4 as *const u8, len) }
+    }
+
+    #[inline]
+    fn prev_regrets_u4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage4 as *mut u8, len) }
+    }
+
+    #[inline]
+    fn regrets_and_prev_i4_packed_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut u8, len),
+                slice::from_raw_parts_mut(self.storage4 as *mut u8, len),
+            )
+        }
+    }
+
+    #[inline]
+    fn regrets_and_prev_u4_packed_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe {
+            (
+                slice::from_raw_parts_mut(self.storage2 as *mut u8, len),
+                slice::from_raw_parts_mut(self.storage4 as *mut u8, len),
+            )
+        }
+    }
+
+    #[inline]
+    fn strategy_u4_packed(&self) -> &[u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts(self.storage1 as *const u8, len) }
+    }
+
+    #[inline]
+    fn strategy_u4_packed_mut(&mut self) -> &mut [u8] {
+        let len = (self.num_elements as usize + 1) / 2;
+        unsafe { slice::from_raw_parts_mut(self.storage1 as *mut u8, len) }
     }
 }
 

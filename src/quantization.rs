@@ -92,6 +92,13 @@ pub enum QuantizationMode {
     /// It reduces memory usage by 75% compared to Float32.
     #[cfg_attr(feature = "serde", serde(rename = "8bit"))]
     Int8,
+
+    /// Compressed precision: 4-bit packed integer (packed into u8).
+    ///
+    /// This mode stores two 4-bit values in one byte.
+    /// It reduces memory usage by 87.5% compared to Float32.
+    #[cfg_attr(feature = "serde", serde(rename = "4bit"))]
+    Int4Packed,
 }
 
 impl Default for QuantizationMode {
@@ -109,6 +116,7 @@ impl QuantizationMode {
             Self::Float32 => 4,
             Self::Int16 | Self::Int16Log => 2,
             Self::Int8 => 1,
+            Self::Int4Packed => 0, // Special case: bytes per element is 0.5
         }
     }
 
@@ -119,6 +127,7 @@ impl QuantizationMode {
             Self::Float32 => num_elements * 4,
             Self::Int16 | Self::Int16Log => num_elements * 2,
             Self::Int8 => num_elements * 1,
+            Self::Int4Packed => (num_elements + 1) / 2,
         }
     }
 

@@ -798,9 +798,24 @@ impl PostFlopGame {
         } else if player == self.current_player() {
             have_actions = true;
             if self.is_compression_enabled() {
-                let slice = node.cfvalues_compressed();
-                let scale = node.cfvalue_scale();
-                decode_signed_slice(slice, scale)
+                // Dispatch based on regret_bits precision
+                match self.regret_bits() {
+                    8 => {
+                        let slice = node.regrets_i8();
+                        let scale = node.cfvalue_scale();
+                        decode_signed_i8(slice, scale)
+                    }
+                    4 => {
+                        let slice = node.regrets_i4_packed();
+                        let scale = node.cfvalue_scale();
+                        decode_signed_i4_packed(slice, scale, node.num_actions() * num_hands)
+                    }
+                    _ => {
+                        let slice = node.cfvalues_compressed();
+                        let scale = node.cfvalue_scale();
+                        decode_signed_slice(slice, scale)
+                    }
+                }
             } else {
                 node.cfvalues().to_vec()
             }
@@ -867,7 +882,9 @@ impl PostFlopGame {
             match self.strategy_bits() {
                 32 => normalized_strategy(node.strategy(), num_actions),
                 16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 16, 32", self.strategy_bits()),
+                8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
+                4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
+                _ => panic!("Invalid strategy_bits: {}. Valid values: 4, 8, 16, 32", self.strategy_bits()),
             }
         } else {
             normalized_strategy(node.strategy(), num_actions)

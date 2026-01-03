@@ -15,7 +15,7 @@ use crate::cfr_algorithms::{CfrAlgorithmTrait, DcfrAlgorithm, DcfrPlusAlgorithm,
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfrAlgorithm {
     DCFR,
-    DCRFPlus,
+    DCFRPlus,
     PDCFRPlus,
     SAPCFRPlus,
 }
@@ -28,7 +28,7 @@ impl CfrAlgorithm {
     pub fn requires_storage4(&self) -> bool {
         match self {
             Self::DCFR => DcfrAlgorithm.requires_storage4(),
-            Self::DCRFPlus => DcfrPlusAlgorithm.requires_storage4(),
+            Self::DCFRPlus => DcfrPlusAlgorithm.requires_storage4(),
             Self::PDCFRPlus => PdcfrPlusAlgorithm.requires_storage4(),
             Self::SAPCFRPlus => SapcfrPlusAlgorithm.requires_storage4(),
         }
@@ -54,7 +54,7 @@ impl DiscountParams {
         // Usa i nuovi trait per calcolare i discount params
         let params = match algorithm {
             CfrAlgorithm::DCFR => DcfrAlgorithm.compute_discounts(current_iteration),
-            CfrAlgorithm::DCRFPlus => DcfrPlusAlgorithm.compute_discounts(current_iteration),
+            CfrAlgorithm::DCFRPlus => DcfrPlusAlgorithm.compute_discounts(current_iteration),
             CfrAlgorithm::PDCFRPlus => PdcfrPlusAlgorithm.compute_discounts(current_iteration),
             CfrAlgorithm::SAPCFRPlus => SapcfrPlusAlgorithm.compute_discounts(current_iteration),
         };
@@ -290,6 +290,21 @@ fn solve_recursive<T: Game>(
                             .sum::<f32>() / num_hands as f32;
 
                         avg_regret < pruning_threshold
+                    } else if game.quantization_mode() == QuantizationMode::Int4Packed {
+                        let regrets = node.regrets_i4_packed();
+                        let scale = node.regret_scale();
+                        let decoder = scale / 7.0;
+                        
+                        let mut sum_regret = 0.0;
+                        for i in 0..num_hands {
+                            let idx = action * num_hands + i;
+                            let byte = regrets[idx / 2];
+                            let nibble = if idx % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+                            let val = ((nibble << 4) as i8) >> 4;
+                            sum_regret += val as f32 * decoder;
+                        }
+                        let avg_regret = sum_regret / num_hands as f32;
+                        avg_regret < pruning_threshold
                     } else {
                         // Compressed mode: check avg regret across all hands for this action
                         let regrets = node.regrets_compressed();
@@ -468,10 +483,16 @@ fn solve_recursive<T: Game>(
             if game.quantization_mode() == QuantizationMode::Int16Log {
                 regret_matching_compressed_log(node.regrets_compressed(), node.regret_scale(), num_actions)
             } else if game.quantization_mode() == QuantizationMode::Int8 {
-                if params.algorithm == CfrAlgorithm::DCRFPlus {
+                if params.algorithm == CfrAlgorithm::DCFRPlus {
                     regret_matching_compressed_u8(node.regrets_u8(), num_actions)
                 } else {
                     regret_matching_compressed_i8(node.regrets_i8(), num_actions)
+                }
+            } else if game.quantization_mode() == QuantizationMode::Int4Packed {
+                if params.algorithm == CfrAlgorithm::DCFRPlus {
+                    regret_matching_compressed_u4_packed(node.regrets_u4_packed(), num_actions, num_hands)
+                } else {
+                    regret_matching_compressed_i4_packed(node.regrets_i4_packed(), num_actions, num_hands)
                 }
             } else {
                 regret_matching_compressed(node.regrets_compressed(), num_actions)
@@ -534,7 +555,7 @@ fn solve_recursive<T: Game>(
                 // 8-bit strategy mode (compressed)
                 let scale = node.strategy_scale();
                 let decoder = params.gamma_t * scale / u8::MAX as f32; // u8::MAX = 255
-                let cum_strategy = node.strategy_i8_mut();
+                let cum_strategy = node.strategy_u8_mut();
 
                 strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
                     *x += (*y as f32) * decoder;
@@ -655,15 +676,37 @@ fn solve_recursive<T: Game>(
                  } else {
                      // DCFR / DCFR+
                      let (alpha, beta) = (params.alpha_t, params.beta_t);
-                     let can_use_dcfr_plus = params.algorithm == CfrAlgorithm::DCRFPlus;
+                     let can_use_dcfr_plus = params.algorithm == CfrAlgorithm::DCFRPlus;
 
                      if can_use_dcfr_plus {
-                         let cum_regret = node.regrets_u8_mut();
-                         let decoder_u8 = scale / u8::MAX as f32;
+                         if game.quantization_mode() == QuantizationMode::Int4Packed {
+                             let cum_regret_packed = node.regrets_u4_packed();
+                             let decoder_u4 = scale / 15.0;
+                             cfv_actions.iter_mut().enumerate().for_each(|(i, x)| {
+                                 let byte = cum_regret_packed[i / 2];
+                                 let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+                                 let real_prev = nibble as f32 * decoder_u4;
+                                 *x += real_prev * alpha;
+                             });
+                         } else {
+                             let cum_regret = node.regrets_u8_mut();
+                             let decoder_u8 = scale / u8::MAX as f32;
 
-                         cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
-                             let real_prev = *y as f32 * decoder_u8;
-                             *x += real_prev * alpha;
+                             cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
+                                 let real_prev = *y as f32 * decoder_u8;
+                                 *x += real_prev * alpha;
+                             });
+                         }
+                     } else if game.quantization_mode() == QuantizationMode::Int4Packed {
+                         let cum_regret_packed = node.regrets_i4_packed();
+                         let decoder_i4 = scale / 7.0;
+                         cfv_actions.iter_mut().enumerate().for_each(|(i, x)| {
+                             let byte = cum_regret_packed[i / 2];
+                             let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+                             let val = ((nibble << 4) as i8) >> 4;
+                             let real_prev = val as f32 * decoder_i4;
+                             let coef = if real_prev >= 0.0 { alpha } else { beta };
+                             *x += real_prev * coef;
                          });
                      } else {
                          let cum_regret = node.regrets_i8_mut();
@@ -685,11 +728,21 @@ fn solve_recursive<T: Game>(
                      }
 
                      if can_use_dcfr_plus {
-                         let new_scale = encode_unsigned_regrets_u8(node.regrets_u8_mut(), &cfv_actions);
-                         node.set_regret_scale(new_scale);
+                         if game.quantization_mode() == QuantizationMode::Int4Packed {
+                             let new_scale = encode_unsigned_u4_packed(node.regrets_u4_packed_mut(), &cfv_actions);
+                             node.set_regret_scale(new_scale);
+                         } else {
+                             let new_scale = encode_unsigned_regrets_u8(node.regrets_u8_mut(), &cfv_actions);
+                             node.set_regret_scale(new_scale);
+                         }
                      } else {
-                         let new_scale = encode_signed_i8(node.regrets_i8_mut(), &cfv_actions);
-                         node.set_regret_scale(new_scale);
+                         if game.quantization_mode() == QuantizationMode::Int4Packed {
+                             let new_scale = encode_signed_i4_packed(node.regrets_i4_packed_mut(), &cfv_actions);
+                             node.set_regret_scale(new_scale);
+                         } else {
+                             let new_scale = encode_signed_i8(node.regrets_i8_mut(), &cfv_actions);
+                             node.set_regret_scale(new_scale);
+                         }
                      }
                  }
 
@@ -849,7 +902,7 @@ fn solve_recursive<T: Game>(
                             *x += real_prev * coef;
                         });
                     }
-                    (CfrAlgorithm::DCRFPlus, QuantizationMode::Int16Log) => {
+                    (CfrAlgorithm::DCFRPlus, QuantizationMode::Int16Log) => {
                         let decoder = scale / i16::MAX as f32;
                         let alpha = params.alpha_t;
                         cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
@@ -866,7 +919,7 @@ fn solve_recursive<T: Game>(
                             *x += *y as f32 * coef;
                         });
                     }
-                    (CfrAlgorithm::DCRFPlus, _) => {
+                    (CfrAlgorithm::DCFRPlus, _) => {
                          let alpha_decoder = params.alpha_t * scale / i16::MAX as f32;
                          cfv_actions.iter_mut().zip(&*cum_regret).for_each(|(x, y)| {
                             *x += *y as f32 * alpha_decoder;
@@ -885,7 +938,7 @@ fn solve_recursive<T: Game>(
                     })
                 }
 
-                if params.algorithm == CfrAlgorithm::DCRFPlus {
+                if params.algorithm == CfrAlgorithm::DCFRPlus {
                     cfv_actions.iter_mut().for_each(|x| {
                         if *x < 0.0 { *x = 0.0; }
                     });
@@ -914,7 +967,7 @@ fn solve_recursive<T: Game>(
                         sub_slice(row, result);
                     });
                 }
-                CfrAlgorithm::DCRFPlus => {
+                CfrAlgorithm::DCFRPlus => {
                     // DCFR+: discount, then add instantaneous regret, then clip
                     let alpha = params.alpha_t;
                     cum_regret.iter_mut().zip(&*cfv_actions).for_each(|(x, y)| {
@@ -1082,7 +1135,7 @@ fn solve_recursive<T: Game>(
             if game.quantization_mode() == QuantizationMode::Int16Log {
                 regret_matching_compressed_log(node.regrets_compressed(), node.regret_scale(), num_actions)
             } else if game.quantization_mode() == QuantizationMode::Int8 {
-                if params.algorithm == CfrAlgorithm::DCRFPlus {
+                if params.algorithm == CfrAlgorithm::DCFRPlus {
                     regret_matching_compressed_u8(node.regrets_u8(), num_actions)
                 } else {
                     regret_matching_compressed_i8(node.regrets_i8(), num_actions)
@@ -1350,6 +1403,98 @@ fn regret_matching_compressed_u8(regret: &[u8], num_actions: usize) -> Vec<f32> 
 
     let default = 1.0 / num_actions as f32;
     strategy.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+#[cfg(feature = "custom-alloc")]
+#[inline]
+fn regret_matching_compressed_i4_packed(regret: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32, StackAlloc> {
+    let num_elements = num_actions * num_hands;
+    let mut strategy = Vec::with_capacity_in(num_elements, StackAlloc);
+    for i in 0..num_elements {
+        let byte = regret[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        let val = ((nibble << 4) as i8) >> 4;
+        strategy.push((val as f32).max(0.0));
+    }
+
+    let mut denom = Vec::with_capacity_in(num_hands, StackAlloc);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(num_hands).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+#[inline]
+fn regret_matching_compressed_i4_packed(regret: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32> {
+    let num_elements = num_actions * num_hands;
+    let mut strategy = Vec::with_capacity(num_elements);
+    for i in 0..num_elements {
+        let byte = regret[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        let val = ((nibble << 4) as i8) >> 4;
+        strategy.push((val as f32).max(0.0));
+    }
+
+    let mut denom = Vec::with_capacity(num_hands);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(num_hands).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+#[cfg(feature = "custom-alloc")]
+#[inline]
+fn regret_matching_compressed_u4_packed(regret: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32, StackAlloc> {
+    let num_elements = num_actions * num_hands;
+    let mut strategy = Vec::with_capacity_in(num_elements, StackAlloc);
+    for i in 0..num_elements {
+        let byte = regret[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        strategy.push(nibble as f32);
+    }
+
+    let mut denom = Vec::with_capacity_in(num_hands, StackAlloc);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(num_hands).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    strategy
+}
+
+#[inline]
+fn regret_matching_compressed_u4_packed(regret: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32> {
+    let num_elements = num_actions * num_hands;
+    let mut strategy = Vec::with_capacity(num_elements);
+    for i in 0..num_elements {
+        let byte = regret[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        strategy.push(nibble as f32);
+    }
+
+    let mut denom = Vec::with_capacity(num_hands);
+    sum_slices_uninit(denom.spare_capacity_mut(), &strategy);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    strategy.chunks_exact_mut(num_hands).for_each(|row| {
         div_slice(row, &denom, default);
     });
 

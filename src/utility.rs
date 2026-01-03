@@ -384,6 +384,51 @@ pub(crate) fn decode_signed_i4_packed(src: &[u8], scale: f32, len: usize) -> Vec
     dst
 }
 
+/// Encodes the `f32` slice to the `u8` slice (unsigned packed 4-bit), and returns the scale.
+/// Used for non-negative regrets (DCFR+). Maps [0, max] to [0, 15].
+#[inline]
+pub(crate) fn encode_unsigned_u4_packed(dst: &mut [u8], slice: &[f32]) -> f32 {
+    let scale = slice_nonnegative_max(slice);
+    let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
+    let encoder = 15.0 / scale_nonzero;
+
+    for i in 0..dst.len() {
+        let s1 = slice[i * 2];
+        let scaled1 = (s1 * encoder).min(15.0).max(0.0);
+        let val1 = stochastic_round(scaled1) as u8;
+
+        let val2 = if i * 2 + 1 < slice.len() {
+            let s2 = slice[i * 2 + 1];
+            let scaled2 = (s2 * encoder).min(15.0).max(0.0);
+            stochastic_round(scaled2) as u8
+        } else {
+            0
+        };
+
+        dst[i] = (val1 & 0x0F) | ((val2 & 0x0F) << 4);
+    }
+
+    scale
+}
+
+/// Decodes the `u8` slice (unsigned packed 4-bit) to `f32`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn decode_unsigned_u4_packed(src: &[u8], scale: f32, len: usize) -> Vec<f32> {
+    let decoder = scale / 15.0;
+    let mut dst = Vec::with_capacity(len);
+    for i in 0..len {
+        let byte = src[i / 2];
+        let nibble = if i % 2 == 0 {
+            byte & 0x0F
+        } else {
+            byte >> 4
+        };
+        dst.push(nibble as f32 * decoder);
+    }
+    dst
+}
+
 /// Applies the given swap to the given slice.
 #[inline]
 pub(crate) fn apply_swap<T>(slice: &mut [T], swap_list: &[(u16, u16)]) {
@@ -638,14 +683,16 @@ fn compute_cfvalue_recursive<T: Game>(
         let mut strategy = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
             16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut strategy = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
 
@@ -694,14 +741,16 @@ fn compute_cfvalue_recursive<T: Game>(
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
             16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
 
@@ -877,14 +926,16 @@ fn compute_best_cfv_recursive<T: Game>(
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
             16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
-            8 => normalized_strategy_compressed_u8(node.strategy_i8(), num_actions),
+            8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
+            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
             _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
         };
 
@@ -1041,6 +1092,33 @@ pub(crate) fn normalized_strategy_compressed_u8_custom_alloc(
     normalized
 }
 
+#[cfg(feature = "custom-alloc")]
+#[inline]
+pub(crate) fn normalized_strategy_compressed_u4_packed_custom_alloc(
+    strategy: &[u8],
+    num_actions: usize,
+    num_hands: usize,
+) -> Vec<f32, StackAlloc> {
+    let num_elements = num_actions * num_hands;
+    let mut normalized = Vec::with_capacity_in(num_elements, StackAlloc);
+    for i in 0..num_elements {
+        let byte = strategy[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        normalized.push(nibble as f32);
+    }
+
+    let mut denom = Vec::with_capacity_in(num_hands, StackAlloc);
+    sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    normalized.chunks_exact_mut(num_hands).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    normalized
+}
+
 #[inline]
 pub(crate) fn normalized_strategy_compressed_u8(strategy: &[u8], num_actions: usize) -> Vec<f32> {
     let mut normalized = Vec::with_capacity(strategy.len());
@@ -1058,6 +1136,27 @@ pub(crate) fn normalized_strategy_compressed_u8(strategy: &[u8], num_actions: us
 
     let default = 1.0 / num_actions as f32;
     normalized.chunks_exact_mut(row_size).for_each(|row| {
+        div_slice(row, &denom, default);
+    });
+
+    normalized
+}
+#[inline]
+pub(crate) fn normalized_strategy_compressed_u4_packed(strategy: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32> {
+    let num_elements = num_actions * num_hands;
+    let mut normalized = Vec::with_capacity(num_elements);
+    for i in 0..num_elements {
+        let byte = strategy[i / 2];
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+        normalized.push(nibble as f32);
+    }
+
+    let mut denom = Vec::with_capacity(num_hands);
+    sum_slices_uninit(denom.spare_capacity_mut(), &normalized);
+    unsafe { denom.set_len(num_hands) };
+
+    let default = 1.0 / num_actions as f32;
+    normalized.chunks_exact_mut(num_hands).for_each(|row| {
         div_slice(row, &denom, default);
     });
 

@@ -171,7 +171,7 @@ impl SolverSettings {
     fn get_algorithm(&self) -> Result<postflop_solver::CfrAlgorithm, String> {
         match self.algorithm.to_lowercase().as_str() {
             "dcfr" => Ok(postflop_solver::CfrAlgorithm::DCFR),
-            "dcfr+" | "dcrfplus" => Ok(postflop_solver::CfrAlgorithm::DCRFPlus),
+            "dcfr+" | "dcrfplus" => Ok(postflop_solver::CfrAlgorithm::DCFRPlus),
             "pdcfr+" | "pdcfrplus" => Ok(postflop_solver::CfrAlgorithm::PDCFRPlus),
             "sapcfr+" | "sapcfrplus" => Ok(postflop_solver::CfrAlgorithm::SAPCFRPlus),
             _ => Err(format!(
@@ -349,7 +349,7 @@ fn main() {
     game.set_cfr_algorithm(algorithm);
     let algorithm_name = match algorithm {
         postflop_solver::CfrAlgorithm::DCFR => "DCFR (dual discount factors)",
-        postflop_solver::CfrAlgorithm::DCRFPlus => "DCFR+ (single discount + clipping)",
+        postflop_solver::CfrAlgorithm::DCFRPlus => "DCFR+ (single discount + clipping)",
         postflop_solver::CfrAlgorithm::PDCFRPlus => "PDCFR+ (predictive discounted CFR+)",
         postflop_solver::CfrAlgorithm::SAPCFRPlus => "SAPCFR+ (asymmetric predictive CFR+)",
     };
