@@ -315,15 +315,27 @@ fn main() {
         .expect("Failed to create game");
 
     // Check memory usage for all quantization modes
-    let (mem_usage_32bit, mem_usage_16bit) = game.memory_usage();
+    let (mem_usage_32bit, mem_usage_16bit, mem_usage_current) = game.memory_usage();
 
-    // Calculate for all modes based on bytes per element
-    // The memory_usage() function returns values for 32-bit and 16-bit
-    let to_gb = |bytes: u64| bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+    // Helper to format size with appropriate unit
+    let format_size = |bytes: u64| {
+        let mb = bytes as f64 / (1024.0 * 1024.0);
+        let gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        if gb >= 1.0 {
+            format!("{:.2} GB ({:.1} MB)", gb, mb)
+        } else {
+            format!("{:.2} MB", mb)
+        }
+    };
 
     println!("\nMemory usage comparison:");
-    println!("  32-bit float:    {:.2} GB (baseline)", to_gb(mem_usage_32bit));
-    println!("  16-bit integer:  {:.2} GB (-50.0%)", to_gb(mem_usage_16bit));
+    println!("  32-bit float:    {:>20} (baseline)", format_size(mem_usage_32bit));
+    
+    let savings_16bit = 100.0 * (1.0 - mem_usage_16bit as f64 / mem_usage_32bit as f64);
+    println!("  16-bit integer:  {:>20} ({:+.1}%)", format_size(mem_usage_16bit), -savings_16bit);
+    
+    let savings_current = 100.0 * (1.0 - mem_usage_current as f64 / mem_usage_32bit as f64);
+    println!("  Current config:  {:>20} ({:+.1}%)", format_size(mem_usage_current), -savings_current);
 
     // Se dry_run è attivo, fermiamo qui
     if config.solver.dry_run {
@@ -372,11 +384,21 @@ fn main() {
     game.set_ip_bits(config.solver.ip_bits);
     game.set_chance_bits(config.solver.chance_bits);
 
-    println!("\nMemory precision configuration:");
-    println!("  Strategy (storage1):    {}-bit", config.solver.strategy_bits);
-    println!("  Regrets (storage2/4):   {}-bit", config.solver.regret_bits);
-    println!("  IP CFValues (storage_ip): {}-bit", config.solver.ip_bits);
-    println!("  Chance CFValues:        {}-bit", config.solver.chance_bits);
+    println!("\nMemory precision configuration (estimated):");
+    let detailed = game.estimated_memory_usage_detailed();
+    let total = detailed.total() as f64;
+    let to_mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+
+    println!("  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+             config.solver.strategy_bits, to_mb(detailed.strategy), 100.0 * detailed.strategy as f64 / total);
+    println!("  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+             config.solver.regret_bits, to_mb(detailed.regrets + detailed.storage4), 100.0 * (detailed.regrets + detailed.storage4) as f64 / total);
+    println!("  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+             config.solver.ip_bits, to_mb(detailed.ip_cfvalues), 100.0 * detailed.ip_cfvalues as f64 / total);
+    println!("  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+             config.solver.chance_bits, to_mb(detailed.chance_cfvalues), 100.0 * detailed.chance_cfvalues as f64 / total);
+    println!("  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
+             to_mb(detailed.misc), 100.0 * detailed.misc as f64 / total);
 
     // Allocate memory using configured precision settings
     game.allocate_memory();

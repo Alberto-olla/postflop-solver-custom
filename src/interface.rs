@@ -155,6 +155,41 @@ pub trait Game: Send + Sync {
     fn memory_usage_mb(&self) -> f64 {
         0.0
     }
+
+    /// Returns the detailed memory usage for each component in bytes.
+    #[doc(hidden)]
+    fn memory_usage_detailed(&self) -> MemoryUsage {
+        MemoryUsage::default()
+    }
+}
+
+/// A struct representing the memory usage of a game tree.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MemoryUsage {
+    /// Memory used for strategy storage (storage1) in bytes.
+    pub strategy: u64,
+    /// Memory used for regret storage (storage2) in bytes.
+    pub regrets: u64,
+    /// Memory used for IP cfvalues storage (storage_ip) in bytes.
+    pub ip_cfvalues: u64,
+    /// Memory used for chance cfvalues storage (storage_chance) in bytes.
+    pub chance_cfvalues: u64,
+    /// Memory used for extra predictive storage (storage4) in bytes.
+    pub storage4: u64,
+    /// Miscellaneous memory (node arena, isomorphism info, etc.) in bytes.
+    pub misc: u64,
+}
+
+impl MemoryUsage {
+    /// Returns the total memory usage in bytes.
+    pub fn total(&self) -> u64 {
+        self.strategy + self.regrets + self.ip_cfvalues + self.chance_cfvalues + self.storage4 + self.misc
+    }
+
+    /// Returns the total memory usage in megabytes.
+    pub fn total_mb(&self) -> f64 {
+        self.total() as f64 / 1_048_576.0
+    }
 }
 
 /// The trait representing a node in game tree.

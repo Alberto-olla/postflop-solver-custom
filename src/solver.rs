@@ -104,7 +104,15 @@ pub fn solve<T: Game>(
             if print_progress {
                 println!("\n[STOP] Reached target exploitability at iteration {}", t);
                 println!("       Current: {:.6}, Target: {:.6}", exploitability, target_exploitability);
-                println!("       Memory usage: {:.2} MB", game.memory_usage_mb());
+                
+                let mem = game.memory_usage_detailed();
+                println!("       Memory usage: {:.2} MB", mem.total_mb());
+                println!("         Strategy:    {:>8.2} MB", mem.strategy as f64 / 1_048_576.0);
+                println!("         Regrets:     {:>8.2} MB", (mem.regrets + mem.storage4) as f64 / 1_048_576.0);
+                println!("         IP CFVs:     {:>8.2} MB", mem.ip_cfvalues as f64 / 1_048_576.0);
+                println!("         Chance CFVs: {:>8.2} MB", mem.chance_cfvalues as f64 / 1_048_576.0);
+                println!("         Misc:        {:>8.2} MB", mem.misc as f64 / 1_048_576.0);
+                
                 io::stdout().flush().unwrap();
             }
             break;

@@ -147,6 +147,16 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
+    fn regret_bits(&self) -> u8 {
+        self.regret_bits
+    }
+
+    #[inline]
+    fn ip_bits(&self) -> u8 {
+        self.ip_bits
+    }
+
+    #[inline]
     fn cfr_algorithm(&self) -> crate::solver::CfrAlgorithm {
         self.cfr_algorithm
     }
@@ -163,12 +173,19 @@ impl Game for PostFlopGame {
 
     #[inline]
     fn memory_usage_mb(&self) -> f64 {
-        let bytes = self.storage1.len()
-                  + self.storage2.len()
-                  + self.storage_ip.len()
-                  + self.storage_chance.len()
-                  + self.storage4.len();
-        bytes as f64 / 1_048_576.0
+        self.memory_usage_detailed().total_mb()
+    }
+
+    #[inline]
+    fn memory_usage_detailed(&self) -> MemoryUsage {
+        MemoryUsage {
+            strategy: self.storage1.len() as u64,
+            regrets: self.storage2.len() as u64,
+            ip_cfvalues: self.storage_ip.len() as u64,
+            chance_cfvalues: self.storage_chance.len() as u64,
+            storage4: self.storage4.len() as u64,
+            misc: self.misc_memory_usage,
+        }
     }
 }
 
@@ -245,6 +262,32 @@ impl Default for PostFlopGame {
 }
 
 impl PostFlopGame {
+    /// Returns the estimated detailed memory usage for the current configuration in bytes.
+    pub fn estimated_memory_usage_detailed(&self) -> MemoryUsage {
+        if self.state <= State::Uninitialized {
+            return MemoryUsage::default();
+        }
+
+        let strategy = (self.num_storage * self.strategy_bits as u64 + 7) / 8;
+        let regrets = (self.num_storage * self.regret_bits as u64 + 7) / 8;
+        let ip_cfvalues = (self.num_storage_ip * self.ip_bits as u64 + 7) / 8;
+        let chance_cfvalues = (self.num_storage_chance * self.chance_bits as u64 + 7) / 8;
+        let storage4 = if self.cfr_algorithm.requires_storage4() {
+            (self.num_storage * self.regret_bits as u64 + 7) / 8
+        } else {
+            0
+        };
+
+        MemoryUsage {
+            strategy,
+            regrets,
+            ip_cfvalues,
+            chance_cfvalues,
+            storage4,
+            misc: self.misc_memory_usage,
+        }
+    }
+
     /// Creates a new empty [`PostFlopGame`].
     ///
     /// Use of this method is strongly discouraged because an instance created by this method is
@@ -382,23 +425,43 @@ impl PostFlopGame {
         &self.private_cards[player]
     }
 
-    /// Returns the estimated memory usage in bytes (uncompressed, compressed).
+    /// Returns the estimated memory usage in bytes (uncompressed, 16-bit, current).
     #[inline]
-    pub fn memory_usage(&self) -> (u64, u64) {
+    pub fn memory_usage(&self) -> (u64, u64, u64) {
         if self.state <= State::Uninitialized {
             panic!("Game is not successfully initialized");
         }
 
-        let num_elements = 2 * self.num_storage + self.num_storage_ip + self.num_storage_chance;
+        // Baseline: 32-bit for everything (except strategy which is often 16-bit in other solvers, 
+        // but here we use 32-bit as absolute baseline)
+        let num_elements_32 = 2 * self.num_storage + self.num_storage_ip + self.num_storage_chance;
         let sapcfr_extra = if self.cfr_algorithm.requires_storage4() {
             self.num_storage
         } else {
             0
         };
-        let uncompressed = 4 * (num_elements + sapcfr_extra) + self.misc_memory_usage;
-        let compressed = 2 * (num_elements + sapcfr_extra) + self.misc_memory_usage;
+        let uncompressed = 4 * (num_elements_32 + sapcfr_extra) + self.misc_memory_usage;
+        
+        // standard 16-bit baseline
+        let compressed_16 = 2 * (num_elements_32 + sapcfr_extra) + self.misc_memory_usage;
 
-        (uncompressed, compressed)
+        // Current configuration estimation
+        let mut current = self.misc_memory_usage;
+        
+        let strategy_bytes = (self.num_storage * self.strategy_bits as u64 + 7) / 8;
+        current += strategy_bytes;
+        
+        let regret_single_bytes = (self.num_storage * self.regret_bits as u64 + 7) / 8;
+        current += regret_single_bytes; // storage2
+        
+        current += (self.num_storage_ip * self.ip_bits as u64 + 7) / 8;
+        current += (self.num_storage_chance * self.chance_bits as u64 + 7) / 8;
+        
+        if self.cfr_algorithm.requires_storage4() {
+            current += regret_single_bytes; // storage4
+        }
+
+        (uncompressed, compressed_16, current)
     }
 
     /// Returns the estimated additional memory usage in bytes when the bunching effect is enabled.
