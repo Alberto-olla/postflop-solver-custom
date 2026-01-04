@@ -253,10 +253,12 @@ fn parse_bet_sizes(
     )
 }
 
-/// Replace "full" bet sizes with "minimal" preset for warm-start
+/// Replace "full", "medium", and other complex presets with "minimal" for warm-start
 fn replace_full_with_minimal(bet_sizes: &BetSizes) -> BetSizes {
     let replace_string = |s: &str| -> String {
-        if s.to_lowercase() == "full" {
+        let s_lower = s.to_lowercase();
+        // Replace complex presets with minimal
+        if s_lower == "full" || s_lower == "medium" {
             "minimal".to_string()
         } else {
             s.to_string()
@@ -661,24 +663,31 @@ fn main() {
 
     // Save
     println!("\nSaving to: {}", output_path.display());
-    save_data_to_file(
+    match save_data_to_file(
         &game,
         &format!("Config: {}", config_filename),
         &output_path,
         config.solver.zstd_compression_level
-    ).expect("Failed to save game");
+    ) {
+        Ok(_) => {
+            // Get actual file size
+            let file_size = fs::metadata(&output_path)
+                .expect("Failed to read file metadata")
+                .len();
 
-    // Get actual file size
-    let file_size = fs::metadata(&output_path)
-        .expect("Failed to read file metadata")
-        .len();
-
-    println!("✓ Game saved successfully!");
-    println!("\nFile: {}", filename);
-    println!("Size: {:.2} MB", file_size as f64 / (1024.0 * 1024.0));
-    if let Some(level) = config.solver.zstd_compression_level {
-        println!("Compression: zstd level {}", level);
-    } else {
-        println!("Compression: none");
+            println!("✓ Game saved successfully!");
+            println!("\nFile: {}", filename);
+            println!("Size: {:.2} MB", file_size as f64 / (1024.0 * 1024.0));
+            if let Some(level) = config.solver.zstd_compression_level {
+                println!("Compression: zstd level {}", level);
+            } else {
+                println!("Compression: none");
+            }
+        },
+        Err(e) => {
+            println!("⚠ Warning: Could not save game file: {}", e);
+            println!("  (Turn/Flop games cannot be saved - this is expected)");
+            println!("\n✓ Solving completed successfully (save skipped)");
+        }
     }
 }

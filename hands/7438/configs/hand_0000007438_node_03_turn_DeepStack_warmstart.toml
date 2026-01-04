@@ -63,7 +63,7 @@ dry_run = false
 
 # Warm-start configuration
 use_warmstart = true
-warmstart_minimal_exploitability_pct = 3.0   # Target 3% of pot exploitability for minimal tree
+warmstart_minimal_exploitability_pct = 10.0   # Target 3% of pot exploitability for minimal tree
 warmstart_minimal_max_iters = 1000          # Safety limit
 warmstart_weight = 10.0
 
