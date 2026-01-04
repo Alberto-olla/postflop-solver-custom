@@ -395,7 +395,239 @@ fn test_warm_start_acceleration() {
     println!("\n✓ CS-CFR Warm-Start Acceleration Test COMPLETED\n");
 }
 
+#[test]
+fn test_warm_start_action_mapping() {
+    println!("\n=== Action Mapping Test ===\n");
+
+    let card_config = CardConfig {
+        range: [Range::ones(); 2],
+        flop: flop_from_str("Ks 7d 2c").unwrap(),
+        turn: card_from_str("As").unwrap(),
+        ..Default::default()
+    };
+
+    let starting_pot = 100;
+    let effective_stack = 1000;
+
+    // Test Case 1: Direct match (50% → 50%)
+    println!("Test 1: Direct match (50% → 50%)");
+    {
+        let minimal_betsizes = BetSizeOptions::try_from(("50%", "")).unwrap();
+        let full_betsizes = BetSizeOptions::try_from(("50%", "")).unwrap();
+
+        let mut game_minimal = create_test_game(&card_config, &minimal_betsizes, starting_pot, effective_stack);
+        game_minimal.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_minimal, i); }
+
+        let mut game_full = create_test_game(&card_config, &full_betsizes, starting_pot, effective_stack);
+        game_full.allocate_memory();
+        let result = game_full.warm_start_from(&game_minimal, 10, 10.0);
+        assert!(result.is_ok(), "Direct match warm-start should succeed");
+        println!("  ✓ Direct match successful");
+    }
+
+    // Test Case 2: Bracketing interpolation (50% → 25%/50%/75%)
+    println!("\nTest 2: Bracketing interpolation (50% → 25%/50%/75%)");
+    {
+        let minimal_betsizes = BetSizeOptions::try_from(("50%", "")).unwrap();
+        let full_betsizes = BetSizeOptions::try_from(("25%, 50%, 75%", "")).unwrap();
+
+        let mut game_minimal = create_test_game(&card_config, &minimal_betsizes, starting_pot, effective_stack);
+        game_minimal.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_minimal, i); }
+
+        let mut game_full = create_test_game(&card_config, &full_betsizes, starting_pot, effective_stack);
+        game_full.allocate_memory();
+        let result = game_full.warm_start_from(&game_minimal, 10, 10.0);
+        assert!(result.is_ok(), "Bracketing warm-start should succeed");
+        println!("  ✓ Bracketing interpolation successful");
+    }
+
+    // Test Case 3: Extrapolation without direct match (50% → 25%/75%)
+    println!("\nTest 3: Extrapolation (50% → 25%/75% without 50%)");
+    {
+        let minimal_betsizes = BetSizeOptions::try_from(("50%", "")).unwrap();
+        let full_betsizes = BetSizeOptions::try_from(("25%, 75%", "")).unwrap();
+
+        let mut game_minimal = create_test_game(&card_config, &minimal_betsizes, starting_pot, effective_stack);
+        game_minimal.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_minimal, i); }
+
+        let mut game_full = create_test_game(&card_config, &full_betsizes, starting_pot, effective_stack);
+        game_full.allocate_memory();
+        let result = game_full.warm_start_from(&game_minimal, 10, 10.0);
+        assert!(result.is_ok(), "Extrapolation warm-start should succeed");
+        println!("  ✓ Extrapolation (bracketing) successful");
+    }
+
+    // Test Case 4: Small bet extrapolation (30% → 50%/75%)
+    println!("\nTest 4: Small bet extrapolation (30% → 50%/75%)");
+    {
+        let minimal_betsizes = BetSizeOptions::try_from(("30%", "")).unwrap();
+        let full_betsizes = BetSizeOptions::try_from(("50%, 75%", "")).unwrap();
+
+        let mut game_minimal = create_test_game(&card_config, &minimal_betsizes, starting_pot, effective_stack);
+        game_minimal.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_minimal, i); }
+
+        let mut game_full = create_test_game(&card_config, &full_betsizes, starting_pot, effective_stack);
+        game_full.allocate_memory();
+        let result = game_full.warm_start_from(&game_minimal, 10, 10.0);
+        assert!(result.is_ok(), "Small bet extrapolation should succeed");
+        println!("  ✓ Small bet extrapolation successful");
+    }
+
+    // Test Case 5: Large bet extrapolation (125% → 50%/75%/100%)
+    println!("\nTest 5: Large bet extrapolation (125% → 50%/75%/100%)");
+    {
+        let minimal_betsizes = BetSizeOptions::try_from(("125%", "")).unwrap();
+        let full_betsizes = BetSizeOptions::try_from(("50%, 75%, 100%", "")).unwrap();
+
+        let mut game_minimal = create_test_game(&card_config, &minimal_betsizes, starting_pot, effective_stack);
+        game_minimal.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_minimal, i); }
+
+        let mut game_full = create_test_game(&card_config, &full_betsizes, starting_pot, effective_stack);
+        game_full.allocate_memory();
+        let result = game_full.warm_start_from(&game_minimal, 10, 10.0);
+        assert!(result.is_ok(), "Large bet extrapolation should succeed");
+        println!("  ✓ Large bet extrapolation (nearest neighbor) successful");
+    }
+
+    println!("\n✓ Action Mapping Test PASSED\n");
+}
+
+#[test]
+fn test_warm_start_quantization_modes() {
+    println!("\n=== Quantization Modes Test ===\n");
+
+    let card_config = CardConfig {
+        range: [Range::ones(); 2],
+        flop: flop_from_str("Ks 7d 2c").unwrap(),
+        turn: card_from_str("As").unwrap(),
+        ..Default::default()
+    };
+
+    let betsizes = BetSizeOptions::try_from(("50%", "")).unwrap();
+    let starting_pot = 100;
+    let effective_stack = 1000;
+
+    // Test Case 1: 32-bit → 32-bit (baseline)
+    println!("Test 1: 32-bit → 32-bit");
+    {
+        let mut game_source = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_source.set_regret_bits(32);
+        game_source.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_source, i); }
+
+        let mut game_target = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_target.set_regret_bits(32);
+        game_target.allocate_memory();
+
+        let result = game_target.warm_start_from(&game_source, 10, 10.0);
+        assert!(result.is_ok(), "32-bit → 32-bit should succeed");
+        println!("  ✓ 32-bit → 32-bit successful");
+    }
+
+    // Test Case 2: 16-bit → 16-bit
+    println!("\nTest 2: 16-bit → 16-bit");
+    {
+        let mut game_source = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_source.set_regret_bits(16);
+        game_source.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_source, i); }
+
+        let mut game_target = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_target.set_regret_bits(16);
+        game_target.allocate_memory();
+
+        let result = game_target.warm_start_from(&game_source, 10, 10.0);
+        assert!(result.is_ok(), "16-bit → 16-bit should succeed");
+        println!("  ✓ 16-bit → 16-bit successful");
+    }
+
+    // Test Case 3: 8-bit → 16-bit (precision upgrade)
+    println!("\nTest 3: 8-bit → 16-bit (precision upgrade)");
+    {
+        let mut game_source = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_source.set_regret_bits(8);
+        game_source.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_source.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_source, i); }
+
+        let mut game_target = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_target.set_regret_bits(16);
+        game_target.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_target.allocate_memory();
+
+        let result = game_target.warm_start_from(&game_source, 10, 10.0);
+        assert!(result.is_ok(), "8-bit → 16-bit upgrade should succeed");
+        println!("  ✓ 8-bit → 16-bit upgrade successful");
+    }
+
+    // Test Case 4: 16-bit → 8-bit (precision downgrade, should warn)
+    println!("\nTest 4: 16-bit → 8-bit (precision downgrade)");
+    {
+        let mut game_source = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_source.set_regret_bits(16);
+        game_source.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_source.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_source, i); }
+
+        let mut game_target = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_target.set_regret_bits(8);
+        game_target.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_target.allocate_memory();
+
+        let result = game_target.warm_start_from(&game_source, 10, 10.0);
+        assert!(result.is_ok(), "16-bit → 8-bit downgrade should succeed with warning");
+        println!("  ✓ 16-bit → 8-bit downgrade successful (with expected warning)");
+    }
+
+    // Test Case 5: 8-bit DCFR+ (unsigned) → 8-bit DCFR+ (unsigned)
+    println!("\nTest 5: 8-bit DCFR+ → 8-bit DCFR+ (unsigned regrets)");
+    {
+        let mut game_source = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_source.set_regret_bits(8);
+        game_source.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_source.allocate_memory();
+        for i in 0..10 { solve_step(&mut game_source, i); }
+
+        let mut game_target = create_test_game(&card_config, &betsizes, starting_pot, effective_stack);
+        game_target.set_regret_bits(8);
+        game_target.set_cfr_algorithm(CfrAlgorithm::DCFRPlus);
+        game_target.allocate_memory();
+
+        let result = game_target.warm_start_from(&game_source, 10, 10.0);
+        assert!(result.is_ok(), "DCFR+ 8-bit → 8-bit should succeed");
+        println!("  ✓ DCFR+ 8-bit → 8-bit successful");
+    }
+
+    println!("\n✓ Quantization Modes Test PASSED\n");
+}
+
 // --- Helper Functions ---
+
+fn create_test_game(
+    card_config: &CardConfig,
+    betsizes: &BetSizeOptions,
+    starting_pot: i32,
+    effective_stack: i32
+) -> PostFlopGame {
+    let mut tree_config = TreeConfig::default();
+    tree_config.initial_state = BoardState::Turn;
+    tree_config.starting_pot = starting_pot;
+    tree_config.effective_stack = effective_stack;
+    tree_config.turn_bet_sizes = [betsizes.clone(), betsizes.clone()];
+    tree_config.river_bet_sizes = [betsizes.clone(), betsizes.clone()];
+
+    let action_tree = ActionTree::new(tree_config).unwrap();
+    let mut game = PostFlopGame::with_config(card_config.clone(), action_tree).unwrap();
+    game.set_strategy_bits(32);
+    game.set_regret_bits(32);
+    // Don't allocate memory here - let tests do it after setting custom bits
+    game
+}
 
 fn print_and_compare_configs(g1: &PostFlopGame, g2: &PostFlopGame, label1: &str, label2: &str) {
     println!("Comparing configurations: {} vs {}", label1, label2);

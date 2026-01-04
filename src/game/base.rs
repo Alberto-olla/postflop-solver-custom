@@ -384,11 +384,13 @@ impl PostFlopGame {
         source_iterations: u32,
         warmstart_weight: f32,
     ) -> Result<u32, String> {
-        if !self.is_ready() {
-            return Err("Target game must be ready (call allocate_memory first)".into());
+        // Check memory allocation (not full is_ready() which requires River state)
+        // is_memory_allocated() returns Some(compression_enabled) when allocated, None otherwise
+        if self.is_memory_allocated().is_none() {
+            return Err("Target game must have memory allocated (call allocate_memory first)".into());
         }
-        if !source_game.is_ready() {
-            return Err("Source game must be ready".into());
+        if source_game.is_memory_allocated().is_none() {
+            return Err("Source game must have memory allocated".into());
         }
 
         crate::warm_start::apply_warm_start(

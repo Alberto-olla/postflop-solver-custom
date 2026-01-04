@@ -66,12 +66,14 @@ pub fn apply_warm_start(
 
 /// Validates that small and large games are compatible for warm-start
 fn validate_games(small: &PostFlopGame, large: &PostFlopGame) -> Result<(), String> {
-    // Check state
-    if !small.is_ready() {
-        return Err("Source game must be ready (memory allocated)".into());
+    // Check state - only verify memory is allocated, not full "is_ready()" which requires River state
+    // We use is_memory_allocated() instead to support Turn/Flop games
+    // is_memory_allocated() returns Some(compression_enabled) when allocated, None otherwise
+    if small.is_memory_allocated().is_none() {
+        return Err("Source game must have memory allocated".into());
     }
-    if !large.is_ready() {
-        return Err("Target game must be ready (memory allocated)".into());
+    if large.is_memory_allocated().is_none() {
+        return Err("Target game must have memory allocated".into());
     }
 
     // Check card configuration (must match exactly)
@@ -321,23 +323,133 @@ fn extract_regrets(
     node: &PostFlopNode,
     game: &PostFlopGame,
 ) -> Result<Vec<f32>, String> {
-    let _regret_bits = game.regret_bits();
+    let regret_bits = game.regret_bits();
 
-    // For now, assume 32-bit (full precision)
-    // TODO: implement quantization support based on game.regret_bits()
-    Ok(node.regrets().to_vec())
+    match regret_bits {
+        32 => {
+            // Full precision f32
+            Ok(node.regrets().to_vec())
+        }
+        16 => {
+            // 16-bit signed quantization (i16)
+            let scale = node.regret_scale();
+            let compressed = node.regrets_compressed();
+            let decoder = scale / i16::MAX as f32;
+            Ok(compressed.iter().map(|&r| r as f32 * decoder).collect())
+        }
+        8 => {
+            // 8-bit quantization (signed i8 or unsigned u8 depending on CFR algorithm)
+            use crate::CfrAlgorithm;
+            let scale = node.regret_scale();
+
+            match game.cfr_algorithm() {
+                CfrAlgorithm::DCFRPlus | CfrAlgorithm::SAPCFRPlus | CfrAlgorithm::PDCFRPlus => {
+                    // Unsigned u8 (regrets are non-negative in CFR+)
+                    let compressed = node.regrets_u8();
+                    let decoder = scale / u8::MAX as f32;
+                    Ok(compressed.iter().map(|&r| r as f32 * decoder).collect())
+                }
+                _ => {
+                    // Signed i8 (for vanilla CFR, DCFR, etc.)
+                    let compressed = node.regrets_i8();
+                    let decoder = scale / i8::MAX as f32;
+                    Ok(compressed.iter().map(|&r| r as f32 * decoder).collect())
+                }
+            }
+        }
+        4 => {
+            // 4-bit packed quantization (two values per byte)
+            let scale = node.regret_scale();
+            let compressed = node.regrets_u8(); // Packed format uses u8 storage
+
+            // Calculate num_elements: num_actions × num_hands
+            // We can infer num_hands from storage size
+            let storage_size = compressed.len(); // Number of bytes (each holds 2 nibbles)
+            let num_elements = storage_size * 2; // Two 4-bit values per byte
+
+            // Decode 4-bit packed (nibbles)
+            let decoder = scale / 7.0; // 4-bit signed range: [-7, 7]
+            let mut regrets = Vec::with_capacity(num_elements);
+
+            for i in 0..num_elements {
+                let byte = compressed[i / 2];
+                let nibble = if i % 2 == 0 {
+                    byte & 0x0F
+                } else {
+                    byte >> 4
+                };
+                // Sign extension for 4-bit signed value
+                let val = ((nibble << 4) as i8) >> 4;
+                regrets.push(val as f32 * decoder);
+            }
+
+            Ok(regrets)
+        }
+        _ => Err(format!("Unsupported regret_bits: {}", regret_bits)),
+    }
 }
 
 /// Injects regrets into a node, handling all quantization modes
 fn inject_regrets(
     node: &mut PostFlopNode,
     regrets: &[f32],
-    _game: &PostFlopGame,
+    game: &PostFlopGame,
 ) -> Result<(), String> {
-    // For now, assume 32-bit (full precision)
-    // TODO: implement quantization support based on game.regret_bits()
-    node.regrets_mut().copy_from_slice(regrets);
-    Ok(())
+    use crate::utility::*;
+
+    let regret_bits = game.regret_bits();
+
+    match regret_bits {
+        32 => {
+            // Full precision f32
+            node.regrets_mut().copy_from_slice(regrets);
+            Ok(())
+        }
+        16 => {
+            // 16-bit signed quantization (i16)
+            let dst = node.regrets_compressed_mut();
+            let scale = encode_signed_slice(dst, regrets);
+            node.set_regret_scale(scale);
+            Ok(())
+        }
+        8 => {
+            // 8-bit quantization (signed i8 or unsigned u8 depending on CFR algorithm)
+            use crate::CfrAlgorithm;
+
+            // Use deterministic seed for stochastic rounding
+            // Based on node pointer to ensure consistency
+            let seed = node as *const _ as u32;
+
+            match game.cfr_algorithm() {
+                CfrAlgorithm::DCFRPlus | CfrAlgorithm::SAPCFRPlus | CfrAlgorithm::PDCFRPlus => {
+                    // Unsigned u8 (regrets are non-negative in CFR+)
+                    let dst = node.regrets_u8_mut();
+                    let scale = encode_unsigned_regrets_u8(dst, regrets, seed);
+                    node.set_regret_scale(scale);
+                    Ok(())
+                }
+                _ => {
+                    // Signed i8 (for vanilla CFR, DCFR, etc.)
+                    let dst = node.regrets_i8_mut();
+                    let scale = encode_signed_i8(dst, regrets, seed);
+                    node.set_regret_scale(scale);
+                    Ok(())
+                }
+            }
+        }
+        4 => {
+            // 4-bit packed quantization (two values per byte)
+
+            // Use deterministic seed for stochastic rounding (calculate before mutable borrow)
+            let seed = node as *const _ as u32;
+
+            let dst = node.regrets_u8_mut(); // Packed format uses u8 storage
+            let scale = encode_signed_i4_packed(dst, regrets, seed);
+            node.set_regret_scale(scale);
+            Ok(())
+        }
+        _ => Err(format!("Unsupported regret_bits: {}", regret_bits)),
+    }
 }
 
 /// Calculates pot size at a given node

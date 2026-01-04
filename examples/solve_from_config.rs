@@ -131,6 +131,38 @@ struct SolverSettings {
     #[serde(default = "default_enable_pruning")]
     enable_pruning: bool,
 
+    /// Enable warm-start: solve minimal tree first, then use as initialization
+    ///
+    /// When enabled, the solver will:
+    /// 1. Replace "full" bet sizes with "minimal" preset
+    /// 2. Solve the minimal tree until warmstart_minimal_exploitability_pct is reached
+    /// 3. Create the full tree with original bet sizes
+    /// 4. Transfer accumulated regrets from minimal to full tree
+    /// 5. Continue solving the full tree
+    ///
+    /// This can significantly accelerate convergence for complex trees.
+    ///
+    /// Default: false
+    #[serde(default = "default_use_warmstart")]
+    use_warmstart: bool,
+
+    /// Target exploitability for minimal tree (as percentage of pot)
+    /// The minimal tree will be solved until this exploitability is reached
+    /// Default: 10.0 (10% of pot)
+    #[serde(default = "default_warmstart_minimal_exploitability_pct")]
+    warmstart_minimal_exploitability_pct: f32,
+
+    /// Maximum iterations for minimal tree (safety limit)
+    /// Default: 1000
+    #[serde(default = "default_warmstart_minimal_max_iters")]
+    warmstart_minimal_max_iters: usize,
+
+    /// Warm-start normalization weight (controls how much influence minimal tree has)
+    /// Higher values = more influence from minimal tree
+    /// Default: 10.0
+    #[serde(default = "default_warmstart_weight")]
+    warmstart_weight: f32,
+
     // DEPRECATED/EXPERIMENTAL: Legacy features
     /// DEPRECATED: Use granular *_bits parameters instead
     #[serde(default)]
@@ -199,6 +231,10 @@ fn default_ip_bits() -> u8 { 16 }        // Default: 16-bit IP cfvalues (balance
 fn default_chance_bits() -> u8 { 16 }    // Default: 16-bit chance cfvalues (balanced)
 fn default_algorithm() -> String { "dcfr".to_string() }  // Default: DCFR for backward compatibility
 fn default_enable_pruning() -> bool { false }  // Default: disabled for backward compatibility
+fn default_use_warmstart() -> bool { false }  // Default: disabled
+fn default_warmstart_minimal_exploitability_pct() -> f32 { 10.0 }  // Default: 10% of pot
+fn default_warmstart_minimal_max_iters() -> usize { 1000 }  // Default: max 1000 iterations
+fn default_warmstart_weight() -> f32 { 10.0 }  // Default: weight 10.0
 
 fn parse_bet_sizes(
     street: &StreetBetSizes,
@@ -215,6 +251,61 @@ fn parse_bet_sizes(
         stack,
         street_name,
     )
+}
+
+/// Replace "full" bet sizes with "minimal" preset for warm-start
+fn replace_full_with_minimal(bet_sizes: &BetSizes) -> BetSizes {
+    let replace_string = |s: &str| -> String {
+        if s.to_lowercase() == "full" {
+            "minimal".to_string()
+        } else {
+            s.to_string()
+        }
+    };
+
+    BetSizes {
+        flop: StreetBetSizes {
+            oop_bet: replace_string(&bet_sizes.flop.oop_bet),
+            oop_raise: replace_string(&bet_sizes.flop.oop_raise),
+            ip_bet: replace_string(&bet_sizes.flop.ip_bet),
+            ip_raise: replace_string(&bet_sizes.flop.ip_raise),
+        },
+        turn: StreetBetSizes {
+            oop_bet: replace_string(&bet_sizes.turn.oop_bet),
+            oop_raise: replace_string(&bet_sizes.turn.oop_raise),
+            ip_bet: replace_string(&bet_sizes.turn.ip_bet),
+            ip_raise: replace_string(&bet_sizes.turn.ip_raise),
+        },
+        river: StreetBetSizes {
+            oop_bet: replace_string(&bet_sizes.river.oop_bet),
+            oop_raise: replace_string(&bet_sizes.river.oop_raise),
+            ip_bet: replace_string(&bet_sizes.river.ip_bet),
+            ip_raise: replace_string(&bet_sizes.river.ip_raise),
+        },
+    }
+}
+
+/// Configure a game with solver settings (algorithm, precision, pruning, etc.)
+fn configure_game(game: &mut PostFlopGame, config: &SolverSettings) -> Result<(), String> {
+    // Configure lazy normalization
+    if config.lazy_normalization {
+        game.set_lazy_normalization(true, config.lazy_normalization_freq);
+    }
+
+    // Configure CFR algorithm
+    let algorithm = config.get_algorithm()?;
+    game.set_cfr_algorithm(algorithm);
+
+    // Configure pruning
+    game.set_enable_pruning(config.enable_pruning);
+
+    // Configure precision
+    game.set_strategy_bits(config.strategy_bits);
+    game.set_regret_bits(config.regret_bits);
+    game.set_ip_bits(config.ip_bits);
+    game.set_chance_bits(config.chance_bits);
+
+    Ok(())
 }
 
 fn main() {
@@ -308,10 +399,10 @@ fn main() {
         merging_threshold: config.tree.merging_threshold,
     };
 
-    // Build game tree
+    // Build game tree (clone tree_config to allow reuse in warm-start path)
     println!("\nBuilding game tree...");
-    let action_tree = ActionTree::new(tree_config).expect("Failed to build action tree");
-    let mut game = PostFlopGame::with_config(card_config, action_tree)
+    let action_tree = ActionTree::new(tree_config.clone()).expect("Failed to build action tree");
+    let mut game = PostFlopGame::with_config(card_config.clone(), action_tree)
         .expect("Failed to create game");
 
     // Check memory usage for all quantization modes
@@ -344,21 +435,106 @@ fn main() {
         return;
     }
 
-    // Configure lazy normalization BEFORE memory allocation
-    if config.solver.lazy_normalization {
-        game.set_lazy_normalization(true, config.solver.lazy_normalization_freq);
-        println!("Lazy normalization: enabled (freq: {})",
-                 if config.solver.lazy_normalization_freq == 0 {
-                     "finalization only".to_string()
-                 } else {
-                     format!("every {} iterations", config.solver.lazy_normalization_freq)
-                 });
+    // Warm-start logic: if enabled, solve minimal tree first
+    let mut start_iteration = 0u32;
+
+    if config.solver.use_warmstart {
+        println!("\n=== WARM-START ENABLED ===");
+        let minimal_target_expl = config.tree.starting_pot as f32 * config.solver.warmstart_minimal_exploitability_pct / 100.0;
+        println!("Phase 1: Solving minimal tree (target: {:.1}% exploitability = {:.2} chips)...",
+                 config.solver.warmstart_minimal_exploitability_pct, minimal_target_expl);
+
+        // Create minimal bet sizes
+        let minimal_bet_sizes = replace_full_with_minimal(&config.bet_sizes);
+
+        // Parse minimal bet sizes
+        let minimal_flop = parse_bet_sizes(&minimal_bet_sizes.flop, config.tree.starting_pot, config.tree.effective_stack, "flop")
+            .expect("Invalid minimal flop bet sizes");
+        let minimal_turn = parse_bet_sizes(&minimal_bet_sizes.turn, config.tree.starting_pot, config.tree.effective_stack, "turn")
+            .expect("Invalid minimal turn bet sizes");
+        let minimal_river = parse_bet_sizes(&minimal_bet_sizes.river, config.tree.starting_pot, config.tree.effective_stack, "river")
+            .expect("Invalid minimal river bet sizes");
+
+        // Create minimal tree config
+        let minimal_tree_config = TreeConfig {
+            initial_state,
+            starting_pot: config.tree.starting_pot,
+            effective_stack: config.tree.effective_stack,
+            rake_rate: config.tree.rake_rate,
+            rake_cap: config.tree.rake_cap,
+            flop_bet_sizes: minimal_flop,
+            turn_bet_sizes: minimal_turn,
+            river_bet_sizes: minimal_river,
+            turn_donk_sizes: None,
+            river_donk_sizes: None,
+            add_allin_threshold: config.tree.add_allin_threshold,
+            force_allin_threshold: config.tree.force_allin_threshold,
+            merging_threshold: config.tree.merging_threshold,
+        };
+
+        // Build and configure minimal game
+        let minimal_action_tree = ActionTree::new(minimal_tree_config).expect("Failed to build minimal action tree");
+        let mut minimal_game = PostFlopGame::with_config(card_config.clone(), minimal_action_tree)
+            .expect("Failed to create minimal game");
+
+        configure_game(&mut minimal_game, &config.solver).expect("Failed to configure minimal game");
+        minimal_game.allocate_memory();
+
+        // Solve minimal tree until target exploitability
+        let minimal_target_expl = config.tree.starting_pot as f32 * config.solver.warmstart_minimal_exploitability_pct / 100.0;
+        let minimal_start = std::time::Instant::now();
+
+        let mut minimal_iters = 0u32;
+        for i in 0..config.solver.warmstart_minimal_max_iters as u32 {
+            solve_step(&mut minimal_game, i);
+            minimal_iters = i + 1;
+
+            // Check exploitability every 10 iterations
+            if i > 0 && i % 10 == 0 {
+                let current_expl = compute_exploitability(&minimal_game);
+                if current_expl <= minimal_target_expl {
+                    println!("  Minimal tree converged at iteration {} (exploitability: {:.6})", i, current_expl);
+                    break;
+                }
+            }
+        }
+
+        let minimal_elapsed = minimal_start.elapsed();
+        let final_minimal_expl = compute_exploitability(&minimal_game);
+        println!("  Minimal tree solved in {:.2}s ({} iterations, final expl: {:.6})",
+                 minimal_elapsed.as_secs_f64(), minimal_iters, final_minimal_expl);
+
+        // Phase 2: Warm-start full tree
+        println!("\nPhase 2: Creating full tree and applying warm-start...");
+
+        // Rebuild full game with original bet sizes
+        let full_action_tree = ActionTree::new(tree_config).expect("Failed to build full action tree");
+        let mut full_game = PostFlopGame::with_config(card_config, full_action_tree)
+            .expect("Failed to create full game");
+
+        configure_game(&mut full_game, &config.solver).expect("Failed to configure full game");
+        full_game.allocate_memory();
+
+        // Apply warm-start
+        start_iteration = full_game.warm_start_from(
+            &minimal_game,
+            minimal_iters,
+            config.solver.warmstart_weight
+        ).expect("Failed to apply warm-start");
+
+        println!("  Warm-start applied! Starting from iteration {}", start_iteration);
+        println!("  Phase 3: Solving full tree from warm-start...\n");
+
+        // Replace game with full game
+        game = full_game;
+    } else {
+        // Normal path: configure and allocate game
+        configure_game(&mut game, &config.solver).expect("Failed to configure game");
+        game.allocate_memory();
     }
 
-    // Configure CFR algorithm variant
-    let algorithm = config.solver.get_algorithm()
-        .expect("Invalid algorithm configuration");
-    game.set_cfr_algorithm(algorithm);
+    // Print configuration (common for both paths)
+    let algorithm = config.solver.get_algorithm().expect("Invalid algorithm configuration");
     let algorithm_name = match algorithm {
         postflop_solver::CfrAlgorithm::DCFR => "DCFR (dual discount factors)",
         postflop_solver::CfrAlgorithm::DCFRPlus => "DCFR+ (single discount + clipping)",
@@ -367,22 +543,22 @@ fn main() {
     };
     println!("Using algorithm: {}", algorithm_name);
 
-    // Configure pruning
-    game.set_enable_pruning(config.solver.enable_pruning);
+    if config.solver.lazy_normalization {
+        println!("Lazy normalization: enabled (freq: {})",
+                 if config.solver.lazy_normalization_freq == 0 {
+                     "finalization only".to_string()
+                 } else {
+                     format!("every {} iterations", config.solver.lazy_normalization_freq)
+                 });
+    }
+
     if config.solver.enable_pruning {
-        // Warn if pruning is enabled with non-DCFR algorithms
         if algorithm != postflop_solver::CfrAlgorithm::DCFR {
             eprintln!("⚠️  Warning: Pruning is only effective with DCFR algorithm (beta=0.5).");
             eprintln!("            Other algorithms clip negative regrets, making pruning ineffective.");
         }
         println!("Regret-based pruning: ENABLED (dynamic threshold)");
     }
-
-    // Configure granular precision for each storage component BEFORE memory allocation
-    game.set_strategy_bits(config.solver.strategy_bits);
-    game.set_regret_bits(config.solver.regret_bits);
-    game.set_ip_bits(config.solver.ip_bits);
-    game.set_chance_bits(config.solver.chance_bits);
 
     println!("\nMemory precision configuration (estimated):");
     let detailed = game.estimated_memory_usage_detailed();
@@ -400,20 +576,29 @@ fn main() {
     println!("  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
              to_mb(detailed.misc), 100.0 * detailed.misc as f64 / total);
 
-    // Allocate memory using configured precision settings
-    game.allocate_memory();
-
-    // Solve
-    println!("\nSolving (max {} iterations)...", config.solver.max_iterations);
+    // Solve (memory already allocated in warm-start or normal path)
+    let remaining_iters = config.solver.max_iterations.saturating_sub(start_iteration as usize);
+    println!("\nSolving (starting from iter {}, max {} more iterations)...", start_iteration, remaining_iters);
     let target_exploitability = config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
 
     let start_time = std::time::Instant::now();
-    let _exploitability = solve(
-        &mut game,
-        config.solver.max_iterations as u32,
-        target_exploitability,
-        true
-    );
+
+    // Manual solve loop to support warm-start
+    for i in start_iteration..config.solver.max_iterations as u32 {
+        solve_step(&mut game, i);
+
+        // Check exploitability every 20 iterations
+        if i % 20 == 0 && i > 0 {
+            let current_expl = compute_exploitability(&game);
+            println!("  Iteration {}: exploitability = {:.6}", i, current_expl);
+
+            if current_expl <= target_exploitability {
+                println!("  Target exploitability reached at iteration {}", i);
+                break;
+            }
+        }
+    }
+
     let elapsed = start_time.elapsed();
 
     println!("\n✓ Solving completed in {:.2}s", elapsed.as_secs_f64());
