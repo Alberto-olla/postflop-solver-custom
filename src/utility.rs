@@ -4,6 +4,13 @@ use crate::sliceop::*;
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
+#[cfg(feature = "bincode")]
+use crate::game::PostFlopGame;
+#[cfg(feature = "bincode")]
+use std::fs::File;
+#[cfg(feature = "bincode")]
+use std::io::{BufReader, BufWriter};
+
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
 
@@ -1276,4 +1283,24 @@ mod tests {
             );
         }
     }
+}
+
+/// Saves the game tree to a file.
+#[cfg(feature = "bincode")]
+pub fn save_gametree(game: &PostFlopGame, path: &str) -> std::io::Result<()> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    bincode::encode_into_std_write(game, &mut writer, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(())
+}
+
+/// Loads the game tree from a file.
+#[cfg(feature = "bincode")]
+pub fn load_gametree(path: &str) -> std::io::Result<PostFlopGame> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let game: PostFlopGame = bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(game)
 }
