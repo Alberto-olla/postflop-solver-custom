@@ -34,19 +34,19 @@ ip_bet = ""
 ip_raise = "900c"
 
 [bet_sizes.turn]
-oop_bet = "minimal"
-oop_raise = "minimal"
-ip_bet = "minimal"
-ip_raise = "minimal"
+oop_bet = "full"
+oop_raise = "full"
+ip_bet = "full"
+ip_raise = "full"
 
 [bet_sizes.river]
-oop_bet = "minimal"
-oop_raise = "minimal"
-ip_bet = "minimal"
-ip_raise = "minimal"
+oop_bet = "full"
+oop_raise = "full"
+ip_bet = "full"
+ip_raise = "full"
 
 [solver]
-max_iterations = 1500
+max_iterations = 200
 target_exploitability_pct = 0.5
 
 # Granular precision control
