@@ -51,11 +51,17 @@ impl GameNode for PostFlopNode {
 
     #[inline]
     fn regrets(&self) -> &[f32] {
+        if self.num_elements == 0 {
+            return &[];
+        }
         unsafe { slice::from_raw_parts(self.storage2 as *const f32, self.num_elements as usize) }
     }
 
     #[inline]
     fn regrets_mut(&mut self) -> &mut [f32] {
+        if self.num_elements == 0 {
+            return &mut [];
+        }
         unsafe { slice::from_raw_parts_mut(self.storage2 as *mut f32, self.num_elements as usize) }
     }
 

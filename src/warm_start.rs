@@ -116,15 +116,21 @@ fn transfer_regrets_recursive(
             // Find matching child in large tree
             let small_action = get_action_at_index(small_node, child_idx)?;
             let large_child_idx = find_matching_child(large_node, &small_action)?;
-            let mut large_child = large_node.play(large_child_idx);
-
-            transfer_regrets_recursive(
-                &*small_child,
-                &mut *large_child,
-                small_game,
-                large_game,
-                avg_factor,
-            )?;
+            match large_child_idx {
+                Some(idx) => {
+                    let mut large_child = large_node.play(idx);
+                    transfer_regrets_recursive(
+                        &*small_child,
+                        &mut *large_child,
+                        small_game,
+                        large_game,
+                        avg_factor,
+                    )?;
+                }
+                None => {
+                    return Err(format!("Matching child not found for chance/terminal action {:?}", small_action));
+                }
+            }
         }
         return Ok(());
     }
@@ -166,18 +172,20 @@ fn transfer_regrets_recursive(
     // Recurse to children
     for small_idx in 0..small_node.num_actions() {
         let small_action = get_action_at_index(small_node, small_idx)?;
-        let large_idx = find_matching_child(large_node, &small_action)?;
+        let matching_idx = find_matching_child(large_node, &small_action)?;
 
-        let small_child = small_node.play(small_idx);
-        let mut large_child = large_node.play(large_idx);
+        if let Some(large_idx) = matching_idx {
+            let small_child = small_node.play(small_idx);
+            let mut large_child = large_node.play(large_idx);
 
-        transfer_regrets_recursive(
-            &*small_child,
-            &mut *large_child,
-            small_game,
-            large_game,
-            avg_factor,
-        )?;
+            transfer_regrets_recursive(
+                &*small_child,
+                &mut *large_child,
+                small_game,
+                large_game,
+                avg_factor,
+            )?;
+        }
     }
 
     Ok(())
@@ -242,18 +250,18 @@ fn map_action(
                 }
             }
 
-            // Case 3: Extrapolation below first bet (interpolate with Check = 0%)
+            // Case 3: Extrapolation below first bet (interpolate with 0% baseline: Check or Call)
             if !large_bets.is_empty() && *small_bet < large_bets[0].1 {
-                let check_idx = large_actions
+                let zero_baseline_idx = large_actions
                     .iter()
-                    .position(|a| matches!(a, Action::Check))
-                    .expect("Check action not found for extrapolation");
+                    .position(|a| matches!(a, Action::Check | Action::Call))
+                    .expect("No Check or Call action found for 0% baseline extrapolation");
 
                 let first_bet_pct = large_bets[0].1 as f32 / pot_size as f32;
                 let weight = small_pct / first_bet_pct;
 
                 return ActionMatch::Interpolated {
-                    low: check_idx,
+                    low: zero_baseline_idx,
                     high: large_bets[0].0,
                     weight,
                 };
@@ -345,7 +353,7 @@ fn calculate_pot_size(node: &PostFlopNode, game: &PostFlopGame) -> i32 {
 fn find_matching_child(
     large_node: &PostFlopNode,
     small_action: &Action,
-) -> Result<usize, String> {
+) -> Result<Option<usize>, String> {
     // For chance nodes: match by card
     if large_node.is_chance() {
         if let Action::Chance(card) = small_action {
@@ -353,23 +361,23 @@ fn find_matching_child(
                 let large_action = get_action_at_index(large_node, idx)?;
                 if let Action::Chance(large_card) = large_action {
                     if large_card == *card {
-                        return Ok(idx);
+                        return Ok(Some(idx));
                     }
                 }
             }
         }
-        return Err(format!("Chance card {:?} not found in large tree", small_action));
+        return Ok(None);
     }
 
     // For player nodes: match by action equivalence
     for idx in 0..large_node.num_actions() {
         let large_action = get_action_at_index(large_node, idx)?;
         if actions_equivalent(small_action, &large_action) {
-            return Ok(idx);
+            return Ok(Some(idx));
         }
     }
 
-    Err(format!("No matching child found for action {:?}", small_action))
+    Ok(None)
 }
 
 /// Checks if two actions are equivalent
