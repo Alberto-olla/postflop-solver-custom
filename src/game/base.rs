@@ -561,9 +561,17 @@ impl PostFlopGame {
         };
 
         // Calculate storage size for strategy
+        // Calculate packed sizes if needed
+        let (packed_regrets, packed_ip, packed_chance) = if self.regret_bits == 4 || self.ip_bits == 4 || self.chance_bits == 4 {
+            self.calculate_packed_sizes()
+        } else {
+            (0, 0, 0)
+        };
+
+        // Calculate storage size for strategy
         let storage1_bytes = (strategy_bytes_per_elem * self.num_storage) as usize;
         let storage_chance_bytes = match self.chance_bits {
-            4 => ((self.num_storage_chance + 1) / 2) as usize,
+            4 => packed_chance,
             _ => (chance_bytes_per_elem * self.num_storage_chance) as usize,
         };
 
@@ -595,11 +603,11 @@ impl PostFlopGame {
 
         self.clear_storage();
         let storage2_bytes = match self.regret_bits {
-            4 => ((self.num_storage + 1) / 2) as usize,
+            4 => packed_regrets,
             _ => (regret_bytes_per_elem * self.num_storage) as usize,
         };
         let storage_ip_bytes = match self.ip_bits {
-            4 => ((self.num_storage_ip + 1) / 2) as usize,
+            4 => packed_ip,
             _ => (ip_bytes_per_elem * self.num_storage_ip) as usize,
         };
 
@@ -610,7 +618,7 @@ impl PostFlopGame {
 
         if self.cfr_algorithm.requires_storage4() {
             let storage4_bytes = match self.regret_bits {
-                4 => ((self.num_storage + 1) / 2) as usize,
+                4 => packed_regrets,
                 _ => (regret_bytes_per_elem * self.num_storage) as usize,
             };
             self.storage4 = vec![0; storage4_bytes];
@@ -1982,6 +1990,36 @@ impl PostFlopGame {
         node.num_elements -= self.num_private_hands(node.player()) as u32;
 
         Ok(info)
+    }
+
+    /// Calculates the exact required bytes for packed 4-bit storage by iterating the arena.
+    /// Returns (regrets_bytes, ip_bytes, chance_bytes).
+    fn calculate_packed_sizes(&self) -> (usize, usize, usize) {
+        let mut packed_regrets = 0usize;
+        let mut packed_ip = 0usize;
+        let mut packed_chance = 0usize;
+
+        for node in &self.node_arena {
+            let node = node.lock();
+            if node.is_terminal() {
+                continue;
+            }
+            
+            if node.is_chance() {
+                if self.chance_bits == 4 {
+                    packed_chance += (node.num_elements as usize + 1) / 2;
+                }
+            } else {
+                // Play node
+                if self.regret_bits == 4 {
+                    packed_regrets += (node.num_elements as usize + 1) / 2;
+                }
+                if self.ip_bits == 4 {
+                    packed_ip += (node.num_elements_ip as usize + 1) / 2;
+                }
+            }
+        }
+        (packed_regrets, packed_ip, packed_chance)
     }
 
     /// Allocates memory recursively.

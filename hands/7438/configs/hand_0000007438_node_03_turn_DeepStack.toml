@@ -51,7 +51,7 @@ target_exploitability_pct = 0.5
 
 # Granular precision control
 strategy_bits = 16
-regret_bits = 8
+regret_bits = 16
 ip_bits = 8
 chance_bits = 4
 
