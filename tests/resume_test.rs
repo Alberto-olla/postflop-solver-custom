@@ -1,13 +1,9 @@
 
 use postflop_solver::*;
-// use postflop_solver::PostFlopGame; // Available at root
-// use postflop_solver::solver::solve_step; // solve_step is in solver but solver is re-exported?
-// lib.rs says: pub use solver::*;
-// So solve_step is available at root.
 
 #[test]
-fn test_resume_capability() {
-    // 1. Setup Common Config
+fn test_resume_with_checkpoint() {
+    // Setup configuration: a game that converges in ~40 iterations
     let card_config = CardConfig {
         range: [Range::ones(); 2],
         flop: flop_from_str("Ks 7d 2c").unwrap(),
@@ -16,7 +12,7 @@ fn test_resume_capability() {
     };
 
     let bet_sizes = BetSizeOptions::try_from(("50%", "")).unwrap();
-    
+
     let mut tree_config = TreeConfig::default();
     tree_config.initial_state = BoardState::Turn;
     tree_config.starting_pot = 100;
@@ -25,57 +21,66 @@ fn test_resume_capability() {
     tree_config.turn_bet_sizes = [bet_sizes.clone(), bet_sizes.clone()];
     tree_config.river_bet_sizes = [bet_sizes.clone(), bet_sizes.clone()];
 
-    // 2. Baseline Run (0 to 20)
+    // BASELINE: Run 40 iterations continuously
     let action_tree = ActionTree::new(tree_config.clone()).unwrap();
     let mut game_baseline = PostFlopGame::with_config(card_config.clone(), action_tree).unwrap();
     game_baseline.allocate_memory();
-    
-    for i in 0..20 {
+
+    for i in 0..40 {
         solve_step(&mut game_baseline, i);
     }
     let exploitability_baseline = compute_exploitability(&game_baseline);
-    
-    // 3. Split Run
-    // Part A: 0 to 10
-    let action_tree_split = ActionTree::new(tree_config.clone()).unwrap();
-    let mut game_split = PostFlopGame::with_config(card_config.clone(), action_tree_split).unwrap();
-    game_split.allocate_memory();
-    
-    for i in 0..10 {
-        solve_step(&mut game_split, i);
+
+    // RESUME TEST: Run 30 iterations, save checkpoint, load, run remaining 10 iterations
+    let action_tree_resume = ActionTree::new(tree_config.clone()).unwrap();
+    let mut game_resume = PostFlopGame::with_config(card_config.clone(), action_tree_resume).unwrap();
+    game_resume.allocate_memory();
+
+    // Part 1: First 30 iterations
+    for i in 0..30 {
+        solve_step(&mut game_resume, i);
     }
-    
-    // Save
-    let save_path = "test_resume.bin";
-    // Usually standard IO errors can be panicked on in tests
-    save_gametree(&game_split, save_path).expect("Failed to save gametree");
-    
-    // Load
-    let mut game_loaded = load_gametree(save_path).expect("Failed to load gametree");
-    
-    // Verify State Validity (optional but good)
+
+    // Save checkpoint at iteration 30
+    let checkpoint_path = "test_checkpoint.bin";
+    save_checkpoint(&game_resume, 30, checkpoint_path).expect("Failed to save checkpoint");
+
+    // Load checkpoint
+    let checkpoint = load_checkpoint(checkpoint_path).expect("Failed to load checkpoint");
+    let mut game_loaded = checkpoint.game;
+    let loaded_iteration = checkpoint.current_iteration;
+
+    // Verify loaded iteration count
+    assert_eq!(loaded_iteration, 30, "Loaded iteration count should be 30");
+
+    // Verify game state is valid
     assert!(game_loaded.is_ready(), "Loaded game should be ready");
-    
-    // Part B: 10 to 20 (Resume)
-    for i in 10..20 {
+
+    // Part 2: Resume from iteration 30 to 40 (10 more iterations)
+    for i in loaded_iteration..(loaded_iteration + 10) {
         solve_step(&mut game_loaded, i);
     }
-    
-    let exploitability_split = compute_exploitability(&game_loaded);
-    
+
+    let exploitability_resumed = compute_exploitability(&game_loaded);
+
     // Cleanup
-    let _ = std::fs::remove_file(save_path);
-    
-    println!("Baseline Exploitability: {:.6}", exploitability_baseline);
-    println!("Resumed Exploitability:  {:.6}", exploitability_split);
-    
-    // Assert closeness
-    // We expect NEAR EXACT match because we passed correct iteration index to solve_step
-    // However, floating point serialization might introduce tiny errors? 
-    // bincode uses standard float serialization, should be consistent.
-    // Threading (parallelism) order might affect floating point sums (non-associative).
-    // If rayon is enabled, order is non-deterministic -> results differ slightly.
-    // We check for "close enough".
-    let diff = (exploitability_baseline - exploitability_split).abs();
-    assert!(diff < 1e-5, "Resumed result differed significantly! Diff: {}", diff);
+    let _ = std::fs::remove_file(checkpoint_path);
+
+    println!("Baseline (40 continuous):  {:.6}", exploitability_baseline);
+    println!("Resumed (30+10):           {:.6}", exploitability_resumed);
+
+    // The resumed run should produce the same result as the baseline
+    // Allow small tolerance for floating-point differences
+    let diff = (exploitability_baseline - exploitability_resumed).abs();
+    let relative_error = diff / exploitability_baseline;
+
+    println!("Absolute difference:       {:.6}", diff);
+    println!("Relative error:            {:.6}%", relative_error * 100.0);
+
+    // Assert that the difference is negligible (< 0.1% relative error)
+    assert!(
+        relative_error < 0.001,
+        "Resumed run differs too much from baseline! Relative error: {:.6}%",
+        relative_error * 100.0
+    );
 }

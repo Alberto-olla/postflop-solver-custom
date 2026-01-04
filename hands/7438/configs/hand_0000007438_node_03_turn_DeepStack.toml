@@ -50,12 +50,12 @@ max_iterations = 1500
 target_exploitability_pct = 0.5
 
 # Granular precision control
-strategy_bits = 16
-regret_bits = 16
-ip_bits = 8
-chance_bits = 4
+strategy_bits = 32
+regret_bits = 32
+ip_bits = 32
+chance_bits = 32
 
-algorithm = "dcfr" # dcfr and dcfr+ also work sapcfr+ pdcfr+
+algorithm = "dcfr+" # dcfr and dcfr+ also work sapcfr+ pdcfr+
 enable_pruning = false
 lazy_normalization = false
 zstd_compression_level = 0

@@ -1285,8 +1285,72 @@ mod tests {
     }
 }
 
-/// Saves the game tree to a file.
+/// A checkpoint of the game state during solving, including metadata for resumption.
 #[cfg(feature = "bincode")]
+pub struct GameCheckpoint {
+    /// The complete game state (tree, strategies, regrets, etc.)
+    pub game: PostFlopGame,
+    /// Number of iterations already completed
+    pub current_iteration: u32,
+    /// Optional: exploitability at checkpoint time (for monitoring)
+    pub exploitability: Option<f32>,
+}
+
+#[cfg(feature = "bincode")]
+impl bincode::Encode for GameCheckpoint {
+    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+        self.game.encode(encoder)?;
+        self.current_iteration.encode(encoder)?;
+        self.exploitability.encode(encoder)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<C> bincode::Decode<C> for GameCheckpoint {
+    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+        Ok(GameCheckpoint {
+            game: PostFlopGame::decode(decoder)?,
+            current_iteration: u32::decode(decoder)?,
+            exploitability: Option::<f32>::decode(decoder)?,
+        })
+    }
+}
+
+/// Saves a checkpoint of the game state to a file.
+/// This is the correct way to save a game in progress for later resumption.
+#[cfg(feature = "bincode")]
+pub fn save_checkpoint(game: &PostFlopGame, current_iteration: u32, path: &str) -> std::io::Result<()> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+
+    // Manually encode each field using encode_into_std_write
+    bincode::encode_into_std_write(game, &mut writer, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    bincode::encode_into_std_write(&current_iteration, &mut writer, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let exploitability: Option<f32> = None;
+    bincode::encode_into_std_write(&exploitability, &mut writer, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    Ok(())
+}
+
+/// Loads a checkpoint from a file, returning the game state and iteration count.
+#[cfg(feature = "bincode")]
+pub fn load_checkpoint(path: &str) -> std::io::Result<GameCheckpoint> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let checkpoint: GameCheckpoint = bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(checkpoint)
+}
+
+/// DEPRECATED: Saves the game tree to a file.
+/// This function does not save iteration count and is unsuitable for resuming solving.
+/// Use `save_checkpoint()` instead for proper resumption support.
+#[cfg(feature = "bincode")]
+#[deprecated(since = "0.1.0", note = "Use save_checkpoint() instead for proper resumption")]
 pub fn save_gametree(game: &PostFlopGame, path: &str) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
@@ -1295,8 +1359,11 @@ pub fn save_gametree(game: &PostFlopGame, path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Loads the game tree from a file.
+/// DEPRECATED: Loads the game tree from a file.
+/// This function does not restore iteration count and is unsuitable for resuming solving.
+/// Use `load_checkpoint()` instead for proper resumption support.
 #[cfg(feature = "bincode")]
+#[deprecated(since = "0.1.0", note = "Use load_checkpoint() instead for proper resumption")]
 pub fn load_gametree(path: &str) -> std::io::Result<PostFlopGame> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
