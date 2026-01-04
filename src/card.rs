@@ -32,7 +32,7 @@ pub const NOT_DEALT: Card = Card::MAX;
 ///     river: NOT_DEALT,
 /// };
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "bincode", derive(Decode, Encode))]
 pub struct CardConfig {
     /// Initial range of each player.

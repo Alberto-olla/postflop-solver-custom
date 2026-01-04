@@ -1,7 +1,6 @@
 use crate::action_tree::*;
 use crate::game::*;
 use crate::interface::*;
-use crate::utility::*;
 
 /// Result of action mapping between small and large trees
 #[derive(Debug, Clone)]
@@ -89,11 +88,11 @@ fn validate_games(small: &PostFlopGame, large: &PostFlopGame) -> Result<(), Stri
     }
 
     // Warn about precision differences (allowed but noted)
-    if small.target_exploitability_rate() != large.target_exploitability_rate() {
+    if small.regret_bits() != large.regret_bits() {
         eprintln!(
             "Warning: Different regret precision ({} vs {} bits). Will convert during transfer.",
-            small.target_exploitability_rate(),
-            large.target_exploitability_rate()
+            small.regret_bits(),
+            large.regret_bits()
         );
     }
 
@@ -291,13 +290,11 @@ fn interpolate_regrets(
 
         ActionMatch::Interpolated { low, high, weight } => {
             // Linear interpolation: split regret between low and high actions
-            let low_slice = &mut large_regrets[low * num_hands..(low + 1) * num_hands];
-            let high_slice = &mut large_regrets[high * num_hands..(high + 1) * num_hands];
-
+            // Use raw indexing to avoid borrow checker issues
             for (i, &r) in small_regrets.iter().enumerate() {
                 let scaled = r * avg_factor;
-                low_slice[i] += scaled * (1.0 - weight);
-                high_slice[i] += scaled * weight;
+                large_regrets[low * num_hands + i] += scaled * (1.0 - weight);
+                large_regrets[high * num_hands + i] += scaled * weight;
             }
         }
 
@@ -316,7 +313,7 @@ fn extract_regrets(
     node: &PostFlopNode,
     game: &PostFlopGame,
 ) -> Result<Vec<f32>, String> {
-    let regret_bits = game.target_exploitability_rate(); // TODO: get actual regret_bits
+    let _regret_bits = game.regret_bits();
 
     // For now, assume 32-bit (full precision)
     // TODO: implement quantization support based on game.regret_bits()
@@ -327,7 +324,7 @@ fn extract_regrets(
 fn inject_regrets(
     node: &mut PostFlopNode,
     regrets: &[f32],
-    game: &PostFlopGame,
+    _game: &PostFlopGame,
 ) -> Result<(), String> {
     // For now, assume 32-bit (full precision)
     // TODO: implement quantization support based on game.regret_bits()
@@ -341,7 +338,7 @@ fn calculate_pot_size(node: &PostFlopNode, game: &PostFlopGame) -> i32 {
     // For now, approximate using node.amount × 2 (symmetric betting)
     // TODO: Track actual pot size during traversal or store in node
     let starting_pot = game.tree_config().starting_pot;
-    starting_pot + node.amount() * 2
+    starting_pot + node.amount * 2
 }
 
 /// Finds matching child index in large tree for a given small tree action
@@ -397,7 +394,7 @@ fn get_action_at_index(node: &PostFlopNode, index: usize) -> Result<Action, Stri
 
     // The action is stored in the child node's prev_action field
     let child = node.play(index);
-    Ok(child.prev_action())
+    Ok(child.prev_action)
 }
 
 /// Helper: Gets all actions from a node
@@ -406,7 +403,7 @@ fn get_all_actions(node: &PostFlopNode) -> Result<Vec<Action>, String> {
 
     for idx in 0..node.num_actions() {
         let child = node.play(idx);
-        actions.push(child.prev_action());
+        actions.push(child.prev_action);
     }
 
     Ok(actions)

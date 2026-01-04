@@ -75,6 +75,7 @@ mod range;
 mod sliceop;
 mod solver;
 mod utility;
+mod warm_start;
 
 // Nuovo modulo trait-based per algoritmi CFR
 // Esportato pubblicamente per permettere custom algorithms
@@ -95,3 +96,4 @@ pub use quantization::*;
 pub use range::*;
 pub use solver::*;
 pub use utility::*;
+pub use warm_start::apply_warm_start;

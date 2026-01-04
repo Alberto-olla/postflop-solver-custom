@@ -342,6 +342,65 @@ impl PostFlopGame {
         Ok(())
     }
 
+    /// Apply warm-start from a solved minimal tree
+    ///
+    /// Transfers accumulated regrets from a smaller solved tree to this tree,
+    /// using linear interpolation for actions. This accelerates convergence
+    /// by leveraging the experience from the smaller tree.
+    ///
+    /// # Arguments
+    /// * `source_game` - The solved minimal tree
+    /// * `source_iterations` - Number of iterations completed on source
+    /// * `warmstart_weight` - Normalization weight (default: 10.0)
+    ///
+    /// # Returns
+    /// Starting iteration count for this game (= warmstart_weight as u32)
+    ///
+    /// # Example
+    /// ```no_run
+    /// use postflop_solver::*;
+    ///
+    /// // Solve minimal tree
+    /// let mut game_minimal = PostFlopGame::with_config(card_config.clone(), minimal_tree)?;
+    /// game_minimal.allocate_memory();
+    /// for i in 0..40 {
+    ///     solve_step(&mut game_minimal, i);
+    /// }
+    ///
+    /// // Warm-start full tree
+    /// let mut game_full = PostFlopGame::with_config(card_config, full_tree)?;
+    /// game_full.allocate_memory();
+    /// let start_iter = game_full.warm_start_from(&game_minimal, 40, 10.0)?;
+    ///
+    /// // Continue solving from start_iter
+    /// for i in start_iter..200 {
+    ///     solve_step(&mut game_full, i);
+    /// }
+    /// # Ok::<(), String>(())
+    /// ```
+    pub fn warm_start_from(
+        &mut self,
+        source_game: &PostFlopGame,
+        source_iterations: u32,
+        warmstart_weight: f32,
+    ) -> Result<u32, String> {
+        if !self.is_ready() {
+            return Err("Target game must be ready (call allocate_memory first)".into());
+        }
+        if !source_game.is_ready() {
+            return Err("Source game must be ready".into());
+        }
+
+        crate::warm_start::apply_warm_start(
+            source_game,
+            self,
+            source_iterations,
+            warmstart_weight,
+        )?;
+
+        Ok(warmstart_weight as u32)
+    }
+
     /// Sets the bunching effect configuration.
     ///
     /// **Warning**: Enabling the bunching effect will significantly slow down the solving process.

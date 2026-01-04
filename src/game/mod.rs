@@ -136,14 +136,14 @@ pub struct PostFlopGame {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PostFlopNode {
-    prev_action: Action,
+    pub(crate) prev_action: Action,
     // Packed field: player (5 bits) + turn (8 bits) + river (8 bits) + is_locked (1 bit)
     // Bits 0-4: player (0-31, actual values 0-2 + flags)
     // Bits 5-12: turn card (0-255)
     // Bits 13-20: river card (0-255)
     // Bit 21: is_locked
     packed_state: u32,
-    amount: i32,
+    pub(crate) amount: i32,
     children_offset: u32,
     num_children: u16,
     num_elements_ip: u16,
