@@ -29,15 +29,15 @@ merging_threshold = 0.1
 
 [bet_sizes.flop]
 oop_bet = "900c"
-oop_raise = "medium"
-ip_bet = "medium"
+oop_raise = "full"
+ip_bet = "full"
 ip_raise = "900c"
 
 [bet_sizes.turn]
 oop_bet = "medium"
-oop_raise = "minimal"
+oop_raise = "medium"
 ip_bet = "medium"
-ip_raise = "minimal"
+ip_raise = "medium"
 
 [bet_sizes.river]
 oop_bet = "medium"
@@ -46,14 +46,14 @@ ip_bet = "medium"
 ip_raise = "minimal"
 
 [solver]
-max_iterations = 500
+max_iterations = 2500
 target_exploitability_pct = 0.5
 
 # Granular precision control
 strategy_bits = 16
-regret_bits = 8
-ip_bits = 8
-chance_bits = 4
+regret_bits = 16
+ip_bits = 16
+chance_bits = 16
 
 algorithm = "dcfr+"
 enable_pruning = false

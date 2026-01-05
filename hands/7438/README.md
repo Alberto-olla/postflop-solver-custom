@@ -165,3 +165,24 @@ IP CFVs:        33.61 MB
 Chance CFVs:     0.85 MB
 Misc:          241.62 MB
 ✓ Solving completed in 123.28s
+
+
+
+
+Example hand: AhQh
+Check: 0.01%
+Bet(900): 99.99%
+
+p1
+
+Example hand: AhQh
+Fold: 13.33%
+Call: 33.78%
+Raise(4825): 52.89%
+AllIn(18500): 0.00%
+
+Example hand: AhQh
+Fold: 3.16%
+Call: 79.08%
+Raise(4825): 17.76%
+AllIn(18500): 0.00%

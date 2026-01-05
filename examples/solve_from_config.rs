@@ -407,8 +407,15 @@ fn main() {
     let mut game = PostFlopGame::with_config(card_config.clone(), action_tree)
         .expect("Failed to create game");
 
+    // Configure game to calculate accurate memory estimates
+    configure_game(&mut game, &config.solver).expect("Failed to configure game");
+
     // Check memory usage for all quantization modes
-    let (mem_usage_32bit, mem_usage_16bit, mem_usage_current) = game.memory_usage();
+    let (mem_usage_32bit, mem_usage_16bit, _) = game.memory_usage();
+
+    // Get accurate memory usage based on actual granular precision settings
+    let detailed = game.estimated_memory_usage_detailed();
+    let mem_usage_current = detailed.total();
 
     // Helper to format size with appropriate unit
     let format_size = |bytes: u64| {
@@ -423,15 +430,32 @@ fn main() {
 
     println!("\nMemory usage comparison:");
     println!("  32-bit float:    {:>20} (baseline)", format_size(mem_usage_32bit));
-    
+
     let savings_16bit = 100.0 * (1.0 - mem_usage_16bit as f64 / mem_usage_32bit as f64);
     println!("  16-bit integer:  {:>20} ({:+.1}%)", format_size(mem_usage_16bit), -savings_16bit);
-    
+
     let savings_current = 100.0 * (1.0 - mem_usage_current as f64 / mem_usage_32bit as f64);
     println!("  Current config:  {:>20} ({:+.1}%)", format_size(mem_usage_current), -savings_current);
 
-    // Se dry_run è attivo, fermiamo qui
+    // Se dry_run è attivo, mostra dettagli e ferma qui
     if config.solver.dry_run {
+        // Print detailed memory breakdown for current config in dry run
+        println!("\nMemory precision configuration (estimated):");
+        let detailed = game.estimated_memory_usage_detailed();
+        let total = detailed.total() as f64;
+        let to_mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+
+        println!("  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+                 config.solver.strategy_bits, to_mb(detailed.strategy), 100.0 * detailed.strategy as f64 / total);
+        println!("  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+                 config.solver.regret_bits, to_mb(detailed.regrets + detailed.storage4), 100.0 * (detailed.regrets + detailed.storage4) as f64 / total);
+        println!("  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+                 config.solver.ip_bits, to_mb(detailed.ip_cfvalues), 100.0 * detailed.ip_cfvalues as f64 / total);
+        println!("  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+                 config.solver.chance_bits, to_mb(detailed.chance_cfvalues), 100.0 * detailed.chance_cfvalues as f64 / total);
+        println!("  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
+                 to_mb(detailed.misc), 100.0 * detailed.misc as f64 / total);
+
         println!("\n✓ Dry run completato - albero NON risolto");
         println!("Per risolvere, imposta dry_run = false nel config");
         return;
@@ -663,31 +687,24 @@ fn main() {
 
     // Save
     println!("\nSaving to: {}", output_path.display());
-    match save_data_to_file(
+    save_data_to_file(
         &game,
         &format!("Config: {}", config_filename),
         &output_path,
         config.solver.zstd_compression_level
-    ) {
-        Ok(_) => {
-            // Get actual file size
-            let file_size = fs::metadata(&output_path)
-                .expect("Failed to read file metadata")
-                .len();
+    ).expect("Failed to save game");
 
-            println!("✓ Game saved successfully!");
-            println!("\nFile: {}", filename);
-            println!("Size: {:.2} MB", file_size as f64 / (1024.0 * 1024.0));
-            if let Some(level) = config.solver.zstd_compression_level {
-                println!("Compression: zstd level {}", level);
-            } else {
-                println!("Compression: none");
-            }
-        },
-        Err(e) => {
-            println!("⚠ Warning: Could not save game file: {}", e);
-            println!("  (Turn/Flop games cannot be saved - this is expected)");
-            println!("\n✓ Solving completed successfully (save skipped)");
-        }
+    // Get actual file size
+    let file_size = fs::metadata(&output_path)
+        .expect("Failed to read file metadata")
+        .len();
+
+    println!("✓ Game saved successfully!");
+    println!("\nFile: {}", filename);
+    println!("Size: {:.2} MB", file_size as f64 / (1024.0 * 1024.0));
+    if let Some(level) = config.solver.zstd_compression_level {
+        println!("Compression: zstd level {}", level);
+    } else {
+        println!("Compression: none");
     }
 }

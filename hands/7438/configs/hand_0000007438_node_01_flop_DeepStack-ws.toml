@@ -1,10 +1,10 @@
 # ============================================================================
-# DECISION NODE 2 - Hand #0000007438
+# DECISION NODE 1 - Hand #0000007438
 # ============================================================================
 # Player: DeepStack (BB)
 # Street: FLOP
-# Pot: $3000
-# Stack: $18500
+# Pot: $1200
+# Stack: $19400
 # ============================================================================
 
 [ranges]
@@ -19,8 +19,8 @@ turn = ""
 river = ""
 
 [tree]
-starting_pot = 3000
-effective_stack = 18500
+starting_pot = 1200
+effective_stack = 19400
 rake_rate = 0.0
 rake_cap = 0.0
 add_allin_threshold = 1.5
@@ -28,26 +28,29 @@ force_allin_threshold = 0.15
 merging_threshold = 0.1
 
 [bet_sizes.flop]
-oop_bet = "900c"
-oop_raise = "e, a"
-ip_bet = "e, a"
-ip_raise = "900c"
+oop_bet = "medium"
+oop_raise = "medium"
+ip_bet = "medium"
+ip_raise = "medium"
 
 [bet_sizes.turn]
-oop_bet = "e, a"
-oop_raise = "e, a"
-ip_bet = "e, a"
-ip_raise = "e, a"
+oop_bet = "medium"
+oop_raise = "minimal"
+ip_bet = "medium"
+ip_raise = "minimal"
 
 [bet_sizes.river]
-oop_bet = "e, a"
-oop_raise = "e, a"
-ip_bet = "e, a"
-ip_raise = "e, a"
+oop_bet = "medium"
+oop_raise = "minimal"
+ip_bet = "medium"
+ip_raise = "minimal"
 
 [solver]
-max_iterations = 500
+max_iterations = 1000
 target_exploitability_pct = 0.5
+use_compression = false
+zstd_compression_level = 0
+dry_run = true
 
 # Granular precision control
 strategy_bits = 32
@@ -55,11 +58,6 @@ regret_bits = 32
 ip_bits = 32
 chance_bits = 32
 
-algorithm = "dcfr+"
-enable_pruning = false
-lazy_normalization = false
-zstd_compression_level = 0
-dry_run = false
 
 [output]
 directory = "hands/7438/solved_games"

@@ -241,7 +241,9 @@ impl FileData for PostFlopGame {
     }
 
     fn is_ready_to_save(&self) -> bool {
-        self.is_solved()
+        // Allow saving Turn/Flop/River games as long as memory is allocated
+        // (don't require State::Solved which needs finalize() and River state)
+        self.is_memory_allocated().is_some()
     }
 
     fn estimated_memory_usage(&self) -> u64 {
