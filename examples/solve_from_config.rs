@@ -609,13 +609,18 @@ fn main() {
 
     let start_time = std::time::Instant::now();
 
+    let mut last_iter = start_iteration;
+    let mut last_expl = 0.0f32;
+
     // Manual solve loop to support warm-start
     for i in start_iteration..config.solver.max_iterations as u32 {
         solve_step(&mut game, i);
+        last_iter = i;
 
         // Check exploitability every 20 iterations
         if i % 20 == 0 && i > 0 {
             let current_expl = compute_exploitability(&game);
+            last_expl = current_expl;
             println!("  Iteration {}: exploitability = {:.6}", i, current_expl);
 
             if current_expl <= target_exploitability {
@@ -626,6 +631,18 @@ fn main() {
     }
 
     let elapsed = start_time.elapsed();
+
+    // Final exploitability check if we didn't just check it
+    if last_iter % 20 != 0 || last_iter == 0 {
+        last_expl = compute_exploitability(&game);
+    }
+
+    println!("\n================================================================================");
+    println!("  STOP - Solving completed");
+    println!("  Iterations: {}", last_iter + 1);
+    println!("  Final exploitability: {:.6}", last_expl);
+    println!("  Target threshold:     {:.6}", target_exploitability);
+    println!("================================================================================");
 
     println!("\n✓ Solving completed in {:.2}s", elapsed.as_secs_f64());
     // println!("Final exploitability: {:.4}", exploitability);
