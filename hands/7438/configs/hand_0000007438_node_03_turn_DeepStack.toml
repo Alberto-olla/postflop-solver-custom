@@ -42,12 +42,12 @@ ip_raise = "full"
 
 [bet_sizes.river]
 oop_bet = "full"
-oop_raise = "full"
+oop_raise = "medium"
 ip_bet = "full"
-ip_raise = "full"
+ip_raise = "medium"
 
 [solver]
-max_iterations = 200
+max_iterations = 500
 target_exploitability_pct = 0.5
 
 # Granular precision control

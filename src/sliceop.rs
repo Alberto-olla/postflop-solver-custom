@@ -1,13 +1,29 @@
 use crate::utility::*;
+#[cfg(target_arch = "x86_64")]
+use crate::sliceop_simd;
 use std::mem::MaybeUninit;
 
 #[inline]
 pub(crate) fn sub_slice(lhs: &mut [f32], rhs: &[f32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if sliceop_simd::has_avx2() && lhs.len() >= 8 {
+            unsafe { sliceop_simd::sub_slice_avx2(lhs, rhs) }
+            return;
+        }
+    }
     lhs.iter_mut().zip(rhs).for_each(|(l, r)| *l -= *r);
 }
 
 #[inline]
 pub(crate) fn mul_slice(lhs: &mut [f32], rhs: &[f32]) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if sliceop_simd::has_avx2() && lhs.len() >= 8 {
+            unsafe { sliceop_simd::mul_slice_avx2(lhs, rhs) }
+            return;
+        }
+    }
     lhs.iter_mut().zip(rhs).for_each(|(l, r)| *l *= *r);
 }
 
@@ -41,6 +57,13 @@ pub(crate) fn mul_slice_scalar_uninit(dst: &mut [MaybeUninit<f32>], src: &[f32],
 
 #[inline]
 pub(crate) fn sum_slices_uninit<'a>(dst: &'a mut [MaybeUninit<f32>], src: &[f32]) -> &'a mut [f32] {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if sliceop_simd::has_avx2() && dst.len() >= 8 {
+            return unsafe { sliceop_simd::sum_slices_uninit_avx2(dst, src) };
+        }
+    }
+
     let len = dst.len();
     dst.iter_mut().zip(src).for_each(|(d, s)| {
         d.write(*s);
@@ -78,6 +101,14 @@ pub(crate) fn fma_slices_uninit<'a>(
     src1: &[f32],
     src2: &[f32],
 ) -> &'a mut [f32] {
+    // CRITICAL: This is the hottest function in CFR - use SIMD FMA when possible!
+    #[cfg(target_arch = "x86_64")]
+    {
+        if sliceop_simd::has_avx2() && dst.len() >= 8 {
+            return unsafe { sliceop_simd::fma_slices_uninit_avx2(dst, src1, src2) };
+        }
+    }
+
     let len = dst.len();
     dst.iter_mut()
         .zip(src1.iter().zip(src2))

@@ -73,6 +73,7 @@ mod preset;
 mod quantization;
 mod range;
 mod sliceop;
+mod sliceop_simd;
 mod solver;
 mod utility;
 mod warm_start;
