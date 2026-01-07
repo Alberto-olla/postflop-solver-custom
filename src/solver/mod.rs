@@ -1,3 +1,6 @@
+mod pruning;
+mod strategy;
+
 use crate::interface::*;
 use crate::mutex_like::*;
 use crate::quantization::traits::QuantizationType;
@@ -5,6 +8,8 @@ use crate::quantization::types::*;
 use crate::quantization::QuantizationMode;
 use crate::sliceop::*;
 use crate::utility::*;
+use pruning::*;
+use strategy::*;
 use std::io::{self, Write};
 use std::mem::MaybeUninit;
 
@@ -45,12 +50,12 @@ impl Default for CfrAlgorithm {
     }
 }
 
-struct DiscountParams {
-    alpha_t: f32,
-    beta_t: f32,
-    gamma_t: f32,
-    algorithm: CfrAlgorithm,
-    current_iteration: u32,
+pub(super) struct DiscountParams {
+    pub(super) alpha_t: f32,
+    pub(super) beta_t: f32,
+    pub(super) gamma_t: f32,
+    pub(super) algorithm: CfrAlgorithm,
+    pub(super) current_iteration: u32,
 }
 
 impl DiscountParams {
@@ -302,64 +307,15 @@ fn solve_recursive<T: Game>(
         // Use manual iteration to support pruning (branch skipping)
         if game.enable_pruning() {
             // Pruning enabled: check each action before recursing
-            let delta = game.tree_config().effective_stack as f32;
-            let t = params.current_iteration as f32;
-            let pruning_threshold = -(delta * t.sqrt() * 10.0); // K=10 safety factor
+            let pruning_threshold = compute_pruning_threshold(
+                game.tree_config().effective_stack,
+                params.current_iteration,
+            );
 
             for action in node.action_indices() {
                 // Check if this action should be skipped (pruned)
-                let should_skip = if game.is_compression_enabled() {
-                    if game.quantization_mode() == QuantizationMode::Int8 {
-                        let regrets = node.regrets_i8();
-                        let scale = node.regret_scale();
-                        let decoder = scale / i8::MAX as f32;
-                        let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
-
-                        let avg_regret: f32 = action_regrets
-                            .iter()
-                            .map(|&r| r as f32 * decoder)
-                            .sum::<f32>()
-                            / num_hands as f32;
-
-                        avg_regret < pruning_threshold
-                    } else if game.quantization_mode() == QuantizationMode::Int4Packed {
-                        let regrets = node.regrets_i4_packed();
-                        let scale = node.regret_scale();
-                        let decoder = scale / 7.0;
-
-                        let mut sum_regret = 0.0;
-                        for i in 0..num_hands {
-                            let idx = action * num_hands + i;
-                            let byte = regrets[idx / 2];
-                            let nibble = if idx % 2 == 0 { byte & 0x0F } else { byte >> 4 };
-                            let val = ((nibble << 4) as i8) >> 4;
-                            sum_regret += val as f32 * decoder;
-                        }
-                        let avg_regret = sum_regret / num_hands as f32;
-                        avg_regret < pruning_threshold
-                    } else {
-                        // Compressed mode: check avg regret across all hands for this action
-                        let regrets = node.regrets_compressed();
-                        let scale = node.regret_scale();
-                        let decoder = scale / i16::MAX as f32;
-                        let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
-
-                        // Calculate average regret for this action
-                        let avg_regret: f32 = action_regrets
-                            .iter()
-                            .map(|&r| r as f32 * decoder)
-                            .sum::<f32>()
-                            / num_hands as f32;
-
-                        avg_regret < pruning_threshold
-                    }
-                } else {
-                    // Float32 mode
-                    let regrets = node.regrets();
-                    let action_regrets = &regrets[action * num_hands..(action + 1) * num_hands];
-                    let avg_regret: f32 = action_regrets.iter().sum::<f32>() / num_hands as f32;
-                    avg_regret < pruning_threshold
-                };
+                let should_skip =
+                    should_prune_action(game, node, action, num_hands, pruning_threshold);
 
                 if should_skip {
                     // Skip this branch - fill with zeros
@@ -396,136 +352,11 @@ fn solve_recursive<T: Game>(
         }
 
         // compute the strategy by regret-maching algorithm
-        let mut strategy = if params.algorithm == CfrAlgorithm::PDCFRPlus {
-            // PDCFR+ Strategy Calculation (Predicted Regret)
-            // Uses predicted regrets (storage4) instead of cumulative regrets
-            let mut predicted_regrets = Vec::with_capacity(num_actions * num_hands);
-
-            if game.is_compression_enabled() {
-                if game.quantization_mode() == QuantizationMode::Int8 {
-                    let predicted = node.prev_regrets_i8();
-                    let scale = node.prev_regret_scale();
-                    let decode_factor = 1.0 / i8::MAX as f32;
-
-                    for &r_pred in predicted.iter() {
-                        let v_pred = r_pred as f32 * scale * decode_factor;
-                        predicted_regrets.push(v_pred.max(0.0));
-                    }
-                } else {
-                    // Int16 quantization mode (come richiesto dall'utente)
-                    let predicted = node.prev_regrets_compressed();
-                    let scale = node.prev_regret_scale();
-                    let decode_factor = 1.0 / i16::MAX as f32;
-
-                    for &r_pred in predicted.iter() {
-                        let v_pred = r_pred as f32 * scale * decode_factor;
-                        predicted_regrets.push(v_pred.max(0.0));
-                    }
-                }
-            } else {
-                // Float32 mode (fallback)
-                let predicted = node.prev_regrets();
-                predicted_regrets.extend_from_slice(predicted);
-            }
-
-            // Use Float32Quant for predicted regrets (already decoded)
-            Float32Quant::regret_matching(&predicted_regrets, 1.0, num_actions)
-        } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
-            // SAPCFR+ Strategy Calculation (Explicit Regret)
-            let mut explicit_regrets = Vec::with_capacity(num_actions * num_hands);
-
-            if game.is_compression_enabled() {
-                let quantization_mode = game.quantization_mode();
-                match quantization_mode {
-                    QuantizationMode::Int8 => {
-                        let implicit = node.regrets_i8();
-                        let prev = node.prev_regrets_i8();
-                        let scale_impl = node.regret_scale();
-                        let scale_prev = node.prev_regret_scale();
-                        let decode_factor = 1.0 / i8::MAX as f32;
-
-                        let num_elements = implicit.len();
-                        for i in 0..num_elements {
-                            let r_impl = implicit[i];
-                            let r_prev = prev[i];
-
-                            let v_impl = r_impl as f32 * scale_impl * decode_factor;
-                            let v_prev = r_prev as f32 * scale_prev * decode_factor;
-
-                            // Explicit = Implicit + 1/3 * Prev
-                            let explicit = v_impl + 0.33333333 * v_prev;
-                            explicit_regrets.push(explicit.max(0.0));
-                        }
-                    }
-                    QuantizationMode::Int16 | QuantizationMode::Int16Log => {
-                        let implicit = node.regrets_compressed();
-                        let prev = node.prev_regrets_compressed();
-                        let scale_impl = node.regret_scale();
-                        let scale_prev = node.prev_regret_scale();
-                        let decode_factor = 1.0 / i16::MAX as f32;
-
-                        let num_elements = implicit.len();
-                        for i in 0..num_elements {
-                            let r_impl = implicit[i];
-                            let r_prev = prev[i];
-
-                            let v_impl = if quantization_mode == QuantizationMode::Int16Log {
-                                let log_val = r_impl as f32 * scale_impl * decode_factor;
-                                if log_val >= 0.0 {
-                                    log_val.exp() - 1.0
-                                } else {
-                                    -((-log_val).exp() - 1.0)
-                                }
-                            } else {
-                                r_impl as f32 * scale_impl * decode_factor
-                            };
-
-                            let v_prev = if quantization_mode == QuantizationMode::Int16Log {
-                                let log_val = r_prev as f32 * scale_prev * decode_factor;
-                                if log_val >= 0.0 {
-                                    log_val.exp() - 1.0
-                                } else {
-                                    -((-log_val).exp() - 1.0)
-                                }
-                            } else {
-                                r_prev as f32 * scale_prev * decode_factor
-                            };
-
-                            // Explicit = Implicit + 1/3 * Prev
-                            let explicit = v_impl + 0.33333333 * v_prev;
-                            explicit_regrets.push(explicit.max(0.0));
-                        }
-                    }
-                    _ => {
-                        // Fallback as Float32
-                        let implicit = node.regrets();
-                        let prev = node.prev_regrets();
-                        implicit.iter().zip(prev).for_each(|(&i, &p)| {
-                            let explicit = i + 0.33333333 * p;
-                            explicit_regrets.push(explicit.max(0.0));
-                        });
-                    }
-                }
-            } else {
-                // Float32 mode
-                let implicit = node.regrets();
-                let prev = node.prev_regrets();
-                implicit.iter().zip(prev).for_each(|(&i, &p)| {
-                    let explicit = i + 0.33333333 * p;
-                    explicit_regrets.push(explicit.max(0.0));
-                });
-            }
-
-            // Use Float32Quant for explicit regrets (already decoded)
-            Float32Quant::regret_matching(&explicit_regrets, 1.0, num_actions)
-        } else {
-            // Use trait-based dispatch for all other cases
-            regret_matching_dispatch(game, node, params.algorithm, num_actions)
-        };
+        let mut strategy = compute_strategy(game, node, params, num_actions, num_hands);
 
         // node-locking
         let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut strategy, locking);
+        crate::utility::apply_locking_strategy(&mut strategy, locking);
 
         // sum up the counterfactual values
         let mut cfv_actions = cfv_actions.lock();
@@ -1262,7 +1093,7 @@ fn solve_recursive<T: Game>(
 
         // node-locking
         let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut cfreach_actions, locking);
+        crate::utility::apply_locking_strategy(&mut cfreach_actions, locking);
 
         // update the reach probabilities
         let row_size = cfreach.len();
