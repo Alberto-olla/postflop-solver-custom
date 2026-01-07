@@ -1,6 +1,6 @@
-use crate::utility::*;
 #[cfg(target_arch = "x86_64")]
 use crate::sliceop_simd;
+use crate::utility::*;
 use std::mem::MaybeUninit;
 
 #[inline]

@@ -18,8 +18,12 @@ fn export_node_recursive(
     // Export strategy if not terminal/chance
     if !node.is_terminal() && !node.is_chance() {
         let strategy = node.strategy();
-        writeln!(output, "{}  Strategy (first 10): {:?}", indent,
-                 &strategy[..strategy.len().min(10)])?;
+        writeln!(
+            output,
+            "{}  Strategy (first 10): {:?}",
+            indent,
+            &strategy[..strategy.len().min(10)]
+        )?;
     }
 
     writeln!(output, "")?;

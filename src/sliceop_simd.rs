@@ -123,9 +123,8 @@ pub(crate) unsafe fn fma_slices_uninit_avx2<'a>(
         i += 8;
     }
     for j in i..len {
-        dst.get_unchecked_mut(j).write(
-            *src1.get_unchecked(j) * *src2.get_unchecked(j)
-        );
+        dst.get_unchecked_mut(j)
+            .write(*src1.get_unchecked(j) * *src2.get_unchecked(j));
     }
 
     let dst = &mut *(dst as *mut _ as *mut [f32]);

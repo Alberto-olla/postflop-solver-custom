@@ -99,10 +99,16 @@ mod tests {
 
         for i in 0..1000 {
             let params = algo.compute_discounts(i);
-            assert_eq!(params.alpha_t, 1.0,
-                "Alpha should always be 1.0 for SAPCFR+ (iteration {})", i);
-            assert_eq!(params.beta_t, 1.0,
-                "Beta should always be 1.0 for SAPCFR+ (iteration {})", i);
+            assert_eq!(
+                params.alpha_t, 1.0,
+                "Alpha should always be 1.0 for SAPCFR+ (iteration {})",
+                i
+            );
+            assert_eq!(
+                params.beta_t, 1.0,
+                "Beta should always be 1.0 for SAPCFR+ (iteration {})",
+                i
+            );
         }
     }
 
@@ -113,8 +119,11 @@ mod tests {
 
         for i in 1..100 {
             let params = algo.compute_discounts(i);
-            assert!(params.gamma_t >= prev_gamma,
-                "Gamma should increase monotonically (iteration {})", i);
+            assert!(
+                params.gamma_t >= prev_gamma,
+                "Gamma should increase monotonically (iteration {})",
+                i
+            );
             prev_gamma = params.gamma_t;
         }
     }
@@ -125,8 +134,11 @@ mod tests {
 
         for i in 0..10000 {
             let params = algo.compute_discounts(i);
-            assert!(params.gamma_t >= 0.0 && params.gamma_t < 1.0,
-                "Gamma should be in [0, 1) (iteration {})", i);
+            assert!(
+                params.gamma_t >= 0.0 && params.gamma_t < 1.0,
+                "Gamma should be in [0, 1) (iteration {})",
+                i
+            );
         }
     }
 
@@ -136,7 +148,9 @@ mod tests {
 
         // Per iterazioni molto grandi, gamma_t -> 1
         let params = algo.compute_discounts(100000);
-        assert!(params.gamma_t > 0.99,
-            "Gamma should approach 1.0 for large iterations");
+        assert!(
+            params.gamma_t > 0.99,
+            "Gamma should approach 1.0 for large iterations"
+        );
     }
 }

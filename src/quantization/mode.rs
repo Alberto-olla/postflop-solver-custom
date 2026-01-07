@@ -37,20 +37,14 @@ impl Default for QuantizationConfig {
 impl QuantizationConfig {
     /// Creates a new quantization config with the given mode and default scale.
     pub fn new(mode: QuantizationMode) -> Self {
-        Self {
-            mode,
-            scale: 1.0,
-        }
+        Self { mode, scale: 1.0 }
     }
 
     /// Creates a quantization config by computing optimal scale from data.
     ///
     /// For Float32 and Int16, this always returns scale = 1.0.
     pub fn from_data(mode: QuantizationMode, _data: &[f32]) -> Self {
-        Self {
-            mode,
-            scale: 1.0,
-        }
+        Self { mode, scale: 1.0 }
     }
 }
 

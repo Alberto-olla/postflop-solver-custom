@@ -75,7 +75,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
-            4 => 0, 
+            4 => 0,
             _ => 2,
         };
 
@@ -83,7 +83,7 @@ impl PostFlopGame {
             32 => 4,
             16 => 2,
             8 => 1,
-            4 => 0, 
+            4 => 0,
             _ => 2,
         };
 
@@ -117,14 +117,14 @@ impl PostFlopGame {
         let check_chance = self.chance_bits > 0;
         let check_s4 = !self.storage4.is_empty();
 
-        while (check_s1 && num_storage[0] == 0) ||
-              (check_s2 && num_storage[1] == 0) ||
-              (check_s3 && num_storage[2] == 0) ||
-              (check_chance && num_storage[3] == 0) ||
-              (check_s4 && num_storage[4] == 0) {
-            
+        while (check_s1 && num_storage[0] == 0)
+            || (check_s2 && num_storage[1] == 0)
+            || (check_s3 && num_storage[2] == 0)
+            || (check_chance && num_storage[3] == 0)
+            || (check_s4 && num_storage[4] == 0)
+        {
             if node_index == 0 {
-                break; 
+                break;
             }
             node_index -= 1;
 
@@ -133,10 +133,10 @@ impl PostFlopGame {
                 let offset_strategy = unsafe { node.storage1.offset_from(self.storage1.as_ptr()) };
                 let offset_regrets = unsafe { node.storage2.offset_from(self.storage2.as_ptr()) };
                 let offset_ip = unsafe { node.storage3.offset_from(self.storage_ip.as_ptr()) };
-                
+
                 // Storage4: SAPCFR+ regrets (might be null if unused)
                 let offset_storage4 = if !node.storage4.is_null() && !self.storage4.is_empty() {
-                    unsafe { node.storage4.offset_from(self.storage4.as_ptr()) } 
+                    unsafe { node.storage4.offset_from(self.storage4.as_ptr()) }
                 } else {
                     0
                 };
@@ -159,12 +159,18 @@ impl PostFlopGame {
                     ip_bytes * node.num_elements_ip as usize
                 };
 
-                if num_storage[0] == 0 { num_storage[0] = offset_strategy as usize + len_strategy; }
-                if num_storage[1] == 0 { num_storage[1] = offset_regrets as usize + len_regrets; }
-                if num_storage[2] == 0 { num_storage[2] = offset_ip as usize + len_ip; }
-                
+                if num_storage[0] == 0 {
+                    num_storage[0] = offset_strategy as usize + len_strategy;
+                }
+                if num_storage[1] == 0 {
+                    num_storage[1] = offset_regrets as usize + len_regrets;
+                }
+                if num_storage[2] == 0 {
+                    num_storage[2] = offset_ip as usize + len_ip;
+                }
+
                 if offset_storage4 > 0 && num_storage[4] == 0 {
-                     num_storage[4] = offset_storage4 as usize + len_regrets; 
+                    num_storage[4] = offset_storage4 as usize + len_regrets;
                 }
             }
             if num_storage[3] == 0 && node.is_chance() {
@@ -210,7 +216,9 @@ impl Encode for PostFlopGame {
         self.action_root.encode(encoder)?;
         self.target_storage_mode.encode(encoder)?;
         self.num_nodes.encode(encoder)?;
-        self.quantization_mode.to_compression_flag().encode(encoder)?;
+        self.quantization_mode
+            .to_compression_flag()
+            .encode(encoder)?;
         self.strategy_bits.encode(encoder)?;
         self.chance_bits.encode(encoder)?;
         self.num_storage.encode(encoder)?;
@@ -223,10 +231,10 @@ impl Encode for PostFlopGame {
         self.storage_chance[0..num_storage[3]].encode(encoder)?;
         // Encode storage4
         if num_storage[4] > 0 {
-             self.storage4[0..num_storage[4]].encode(encoder)?;
+            self.storage4[0..num_storage[4]].encode(encoder)?;
         } else {
-             // Encode empty if unused
-             Vec::<u8>::new().encode(encoder)?;
+            // Encode empty if unused
+            Vec::<u8>::new().encode(encoder)?;
         }
 
         let num_nodes = match self.target_storage_mode {
@@ -244,10 +252,10 @@ impl Encode for PostFlopGame {
         PTR_BASE.with(|c| {
             if self.state >= State::MemoryAllocated {
                 c.set([
-                    self.storage1.as_ptr(), 
-                    self.storage2.as_ptr(), 
+                    self.storage1.as_ptr(),
+                    self.storage2.as_ptr(),
                     self.storage_ip.as_ptr(),
-                    self.storage4.as_ptr()
+                    self.storage4.as_ptr(),
                 ]);
             } else {
                 c.set([ptr::null(); 4]);
@@ -310,7 +318,7 @@ impl<C> Decode<C> for PostFlopGame {
         };
 
         game.target_storage_mode = game.storage_mode;
-        
+
         // Handle "River" mode re-allocation logic if needed (skipping for now as we focus on Resume)
 
         // store base pointers
@@ -379,37 +387,37 @@ impl Encode for PostFlopNode {
                 let bases = PTR_BASE.with(|c| c.get());
                 unsafe {
                     self.storage1.offset_from(bases[0]).encode(encoder)?; // Strategy offset (storage1)
-                    
+
                     // Explicitly encode storage2 offset (Regrets)
                     // If storage2 is not null
                     if !self.storage2.is_null() && !bases[1].is_null() {
-                         self.storage2.offset_from(bases[1]).encode(encoder)?;
+                        self.storage2.offset_from(bases[1]).encode(encoder)?;
                     } else {
-                         // Should probably panic or encode 0 marker? 
-                         // But for now assume structure holds.
-                         // But to keep Decode aligned, we MUST encode something if we act like Play Node.
-                         // Assume storage2 is always present for Play Node.
-                         self.storage2.offset_from(bases[1]).encode(encoder)?;
+                        // Should probably panic or encode 0 marker?
+                        // But for now assume structure holds.
+                        // But to keep Decode aligned, we MUST encode something if we act like Play Node.
+                        // Assume storage2 is always present for Play Node.
+                        self.storage2.offset_from(bases[1]).encode(encoder)?;
                     }
 
                     self.storage3.offset_from(bases[2]).encode(encoder)?; // IP CFV offset (storage_ip) -- bases[2] now
 
-                     // Storage4 (SAPCFR+)
-                     // We need a flag? Or just always encode it?
-                     // bincode relies on fixed structure or length prefix.
-                     // We can't really add optional field in middle without breaking struct.
-                     // But we can encode it conditionally if we assume Decode knows?
-                     // Decode knows nothing locally.
-                     // So we must always encode it for Play Node, or use sentinel.
-                     // If we always encode, we waste space for DCFR.
-                     // But for robustness, let's encode it if bases[3] is not null?
-                     // No, Decode needs to know IF it should read it.
-                     // Let's decide: Always encode storage4 offset. If null, encode 0.
-                     if !bases[3].is_null() && !self.storage4.is_null() {
-                         self.storage4.offset_from(bases[3]).encode(encoder)?;
-                     } else {
-                         0isize.encode(encoder)?;
-                     }
+                    // Storage4 (SAPCFR+)
+                    // We need a flag? Or just always encode it?
+                    // bincode relies on fixed structure or length prefix.
+                    // We can't really add optional field in middle without breaking struct.
+                    // But we can encode it conditionally if we assume Decode knows?
+                    // Decode knows nothing locally.
+                    // So we must always encode it for Play Node, or use sentinel.
+                    // If we always encode, we waste space for DCFR.
+                    // But for robustness, let's encode it if bases[3] is not null?
+                    // No, Decode needs to know IF it should read it.
+                    // Let's decide: Always encode storage4 offset. If null, encode 0.
+                    if !bases[3].is_null() && !self.storage4.is_null() {
+                        self.storage4.offset_from(bases[3]).encode(encoder)?;
+                    } else {
+                        0isize.encode(encoder)?;
+                    }
                 }
             }
         }
@@ -446,13 +454,13 @@ impl<C> Decode<C> for PostFlopNode {
         } else {
             let bases = PTR_BASE_MUT.with(|c| c.get());
             if !bases[0].is_null() {
-                let offset = isize::decode(decoder)?;      // Strategy
+                let offset = isize::decode(decoder)?; // Strategy
                 let offset_regret = isize::decode(decoder)?; // Regrets (New!)
-                let offset_ip = isize::decode(decoder)?;   // IP CFV
-                let offset_s4 = isize::decode(decoder)?;   // Storage4 (New!)
+                let offset_ip = isize::decode(decoder)?; // IP CFV
+                let offset_s4 = isize::decode(decoder)?; // Storage4 (New!)
 
                 node.storage1 = unsafe { bases[0].offset(offset) };
-                
+
                 // Use explicit offset for storage2
                 if !bases[1].is_null() {
                     node.storage2 = unsafe { bases[1].offset(offset_regret) };
@@ -463,7 +471,7 @@ impl<C> Decode<C> for PostFlopNode {
                 }
 
                 // Storage4
-                 if !bases[3].is_null() && offset_s4 != 0 {
+                if !bases[3].is_null() && offset_s4 != 0 {
                     node.storage4 = unsafe { bases[3].offset(offset_s4) };
                 }
             }

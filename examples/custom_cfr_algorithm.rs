@@ -8,7 +8,6 @@
 /// - No discounting sui regrets (alpha = 1.0)
 /// - Linear averaging sulla strategy (gamma cresce linearmente)
 /// - Convergenza più lenta ma implementazione semplice
-
 use postflop_solver::cfr_algorithms::{CfrAlgorithmTrait, DiscountParams};
 
 /// Linear CFR - Variante base senza discounting
@@ -30,18 +29,18 @@ impl CfrAlgorithmTrait for LinearCfrAlgorithm {
 
         // Linear CFR: no regret discounting, simple linear averaging
         DiscountParams {
-            alpha_t: 1.0,  // No regret discounting
-            beta_t: 1.0,   // No sign-based discounting
+            alpha_t: 1.0, // No regret discounting
+            beta_t: 1.0,  // No sign-based discounting
             gamma_t: if iteration == 0 {
                 0.0
             } else {
-                t / (t + 1.0)  // Linear averaging (no cubic power)
+                t / (t + 1.0) // Linear averaging (no cubic power)
             },
         }
     }
 
     fn requires_storage4(&self) -> bool {
-        false  // Linear CFR non richiede storage4
+        false // Linear CFR non richiede storage4
     }
 
     fn clone_box(&self) -> Box<dyn CfrAlgorithmTrait> {
@@ -60,26 +59,24 @@ fn main() {
 
     // Mostra i discount params per diverse iterazioni
     println!("Discount parameters per iterazione:\n");
-    println!("{:>10} {:>10} {:>10} {:>10}", "Iteration", "Alpha", "Beta", "Gamma");
+    println!(
+        "{:>10} {:>10} {:>10} {:>10}",
+        "Iteration", "Alpha", "Beta", "Gamma"
+    );
     println!("{:-<44}", "");
 
     for iteration in [0, 1, 5, 10, 50, 100, 500, 1000] {
         let params = linear_cfr.compute_discounts(iteration);
         println!(
             "{:>10} {:>10.4} {:>10.4} {:>10.4}",
-            iteration,
-            params.alpha_t,
-            params.beta_t,
-            params.gamma_t
+            iteration, params.alpha_t, params.beta_t, params.gamma_t
         );
     }
 
     println!("\n=== Confronto con altri algoritmi ===\n");
 
     // Importa algoritmi standard per confronto
-    use postflop_solver::cfr_algorithms::{
-        DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm
-    };
+    use postflop_solver::cfr_algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm};
 
     let algorithms: Vec<(&str, Box<dyn CfrAlgorithmTrait>)> = vec![
         ("Linear CFR", Box::new(LinearCfrAlgorithm)),
@@ -102,7 +99,11 @@ fn main() {
 
     println!("\nStorage4 requirements:\n");
     for (name, algo) in &algorithms {
-        let requires = if algo.requires_storage4() { "YES" } else { "NO" };
+        let requires = if algo.requires_storage4() {
+            "YES"
+        } else {
+            "NO"
+        };
         println!("  {:<15} {}", name, requires);
     }
 

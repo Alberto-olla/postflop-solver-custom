@@ -109,8 +109,11 @@ mod tests {
 
         for i in 1..100 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= prev_alpha,
-                "Alpha should increase monotonically (iteration {})", i);
+            assert!(
+                params.alpha_t >= prev_alpha,
+                "Alpha should increase monotonically (iteration {})",
+                i
+            );
             prev_alpha = params.alpha_t;
         }
     }
@@ -121,15 +124,18 @@ mod tests {
 
         for i in 0..10000 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= 0.0 && params.alpha_t < 1.0,
-                "Alpha should be in [0, 1) (iteration {})", i);
+            assert!(
+                params.alpha_t >= 0.0 && params.alpha_t < 1.0,
+                "Alpha should be in [0, 1) (iteration {})",
+                i
+            );
         }
     }
 
     #[test]
     fn test_discounts_match_dcfr() {
         // PDCFR+ dovrebbe avere gli stessi discount parameters di DCFR
-        use super::super::DcfrAlgorithm;
+        use crate::cfr_algorithms::DcfrAlgorithm;
 
         let pdcfr_plus = PdcfrPlusAlgorithm;
         let dcfr = DcfrAlgorithm;
@@ -138,12 +144,21 @@ mod tests {
             let params_pdcfr = pdcfr_plus.compute_discounts(i);
             let params_dcfr = dcfr.compute_discounts(i);
 
-            assert_eq!(params_pdcfr.alpha_t, params_dcfr.alpha_t,
-                "Alpha should match DCFR (iteration {})", i);
-            assert_eq!(params_pdcfr.beta_t, params_dcfr.beta_t,
-                "Beta should match DCFR (iteration {})", i);
-            assert_eq!(params_pdcfr.gamma_t, params_dcfr.gamma_t,
-                "Gamma should match DCFR (iteration {})", i);
+            assert_eq!(
+                params_pdcfr.alpha_t, params_dcfr.alpha_t,
+                "Alpha should match DCFR (iteration {})",
+                i
+            );
+            assert_eq!(
+                params_pdcfr.beta_t, params_dcfr.beta_t,
+                "Beta should match DCFR (iteration {})",
+                i
+            );
+            assert_eq!(
+                params_pdcfr.gamma_t, params_dcfr.gamma_t,
+                "Gamma should match DCFR (iteration {})",
+                i
+            );
         }
     }
 }

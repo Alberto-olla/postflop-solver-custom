@@ -97,8 +97,11 @@ mod tests {
 
         for i in 1..100 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= prev_alpha,
-                "Alpha should increase monotonically (iteration {})", i);
+            assert!(
+                params.alpha_t >= prev_alpha,
+                "Alpha should increase monotonically (iteration {})",
+                i
+            );
             prev_alpha = params.alpha_t;
         }
     }
@@ -109,8 +112,11 @@ mod tests {
 
         for i in 0..10000 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= 0.0 && params.alpha_t < 1.0,
-                "Alpha should be in [0, 1) (iteration {})", i);
+            assert!(
+                params.alpha_t >= 0.0 && params.alpha_t < 1.0,
+                "Alpha should be in [0, 1) (iteration {})",
+                i
+            );
         }
     }
 
@@ -124,10 +130,16 @@ mod tests {
             let params_dcfr = dcfr.compute_discounts(i);
             let params_plus = dcfr_plus.compute_discounts(i);
 
-            assert!((params_dcfr.alpha_t - params_plus.alpha_t).abs() < 0.0001,
-                "Alpha should match at iteration {}", i);
-            assert!((params_dcfr.gamma_t - params_plus.gamma_t).abs() < 0.0001,
-                "Gamma should match at iteration {}", i);
+            assert!(
+                (params_dcfr.alpha_t - params_plus.alpha_t).abs() < 0.0001,
+                "Alpha should match at iteration {}",
+                i
+            );
+            assert!(
+                (params_dcfr.gamma_t - params_plus.gamma_t).abs() < 0.0001,
+                "Gamma should match at iteration {}",
+                i
+            );
         }
     }
 }

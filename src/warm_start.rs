@@ -10,9 +10,9 @@ pub enum ActionMatch {
 
     /// Linear interpolation between two actions
     Interpolated {
-        low: usize,      // Index of lower bet size action
-        high: usize,     // Index of higher bet size action
-        weight: f32,     // Interpolation weight [0, 1], favoring high
+        low: usize,  // Index of lower bet size action
+        high: usize, // Index of higher bet size action
+        weight: f32, // Interpolation weight [0, 1], favoring high
     },
 
     /// Nearest neighbor (extrapolation fallback)
@@ -130,7 +130,10 @@ fn transfer_regrets_recursive(
                     )?;
                 }
                 None => {
-                    return Err(format!("Matching child not found for chance/terminal action {:?}", small_action));
+                    return Err(format!(
+                        "Matching child not found for chance/terminal action {:?}",
+                        small_action
+                    ));
                 }
             }
         }
@@ -150,7 +153,8 @@ fn transfer_regrets_recursive(
     // Map each small action to large action(s)
     for small_idx in 0..small_node.num_actions() {
         let small_action = get_action_at_index(small_node, small_idx)?;
-        let small_action_regrets = &small_regrets[small_idx * num_hands..(small_idx + 1) * num_hands];
+        let small_action_regrets =
+            &small_regrets[small_idx * num_hands..(small_idx + 1) * num_hands];
 
         // Get large tree actions for mapping
         let large_actions = get_all_actions(large_node)?;
@@ -194,11 +198,7 @@ fn transfer_regrets_recursive(
 }
 
 /// Maps a small tree action to large tree action(s) with interpolation
-fn map_action(
-    small_action: &Action,
-    large_actions: &[Action],
-    pot_size: i32,
-) -> ActionMatch {
+fn map_action(small_action: &Action, large_actions: &[Action], pot_size: i32) -> ActionMatch {
     match small_action {
         // Fixed actions: direct 1:1 match
         Action::Fold | Action::Call | Action::Check => {
@@ -319,10 +319,7 @@ fn interpolate_regrets(
 }
 
 /// Extracts regrets from a node, handling all quantization modes
-fn extract_regrets(
-    node: &PostFlopNode,
-    game: &PostFlopGame,
-) -> Result<Vec<f32>, String> {
+fn extract_regrets(node: &PostFlopNode, game: &PostFlopGame) -> Result<Vec<f32>, String> {
     let regret_bits = game.regret_bits();
 
     match regret_bits {
@@ -373,11 +370,7 @@ fn extract_regrets(
 
             for i in 0..num_elements {
                 let byte = compressed[i / 2];
-                let nibble = if i % 2 == 0 {
-                    byte & 0x0F
-                } else {
-                    byte >> 4
-                };
+                let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
                 // Sign extension for 4-bit signed value
                 let val = ((nibble << 4) as i8) >> 4;
                 regrets.push(val as f32 * decoder);
@@ -509,7 +502,11 @@ fn actions_equivalent(a1: &Action, a2: &Action) -> bool {
 /// Helper: Gets action at a specific index from a node
 fn get_action_at_index(node: &PostFlopNode, index: usize) -> Result<Action, String> {
     if index >= node.num_actions() {
-        return Err(format!("Action index {} out of bounds (max: {})", index, node.num_actions()));
+        return Err(format!(
+            "Action index {} out of bounds (max: {})",
+            index,
+            node.num_actions()
+        ));
     }
 
     // The action is stored in the child node's prev_action field

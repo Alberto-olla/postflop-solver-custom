@@ -70,7 +70,7 @@ struct SolverSettings {
     #[serde(default)]
     zstd_compression_level: Option<i32>,
     #[serde(default)]
-    dry_run: bool,  // Solo stima tree size, non risolve
+    dry_run: bool, // Solo stima tree size, non risolve
 
     // Lazy normalization settings
     #[serde(default)]
@@ -195,7 +195,9 @@ impl SolverSettings {
             }
         } else {
             // Legacy format: use boolean flag
-            Ok(QuantizationMode::from_compression_flag(self.use_compression))
+            Ok(QuantizationMode::from_compression_flag(
+                self.use_compression,
+            ))
         }
     }
 
@@ -221,20 +223,48 @@ struct OutputSettings {
 }
 
 // Default functions
-fn default_add_allin_threshold() -> f64 { 1.5 }
-fn default_force_allin_threshold() -> f64 { 0.01 }  // 1% - permette sizing vicini allo stack
-fn default_merging_threshold() -> f64 { 0.05 }  // 5% - buon compromesso precisione/performance
-fn default_output_dir() -> String { "solved_games".to_string() }
-fn default_strategy_bits() -> u8 { 16 }  // Default: 16-bit strategy (balanced)
-fn default_regret_bits() -> u8 { 16 }    // Default: 16-bit regrets (balanced)
-fn default_ip_bits() -> u8 { 16 }        // Default: 16-bit IP cfvalues (balanced)
-fn default_chance_bits() -> u8 { 16 }    // Default: 16-bit chance cfvalues (balanced)
-fn default_algorithm() -> String { "dcfr".to_string() }  // Default: DCFR for backward compatibility
-fn default_enable_pruning() -> bool { false }  // Default: disabled for backward compatibility
-fn default_use_warmstart() -> bool { false }  // Default: disabled
-fn default_warmstart_minimal_exploitability_pct() -> f32 { 10.0 }  // Default: 10% of pot
-fn default_warmstart_minimal_max_iters() -> usize { 1000 }  // Default: max 1000 iterations
-fn default_warmstart_weight() -> f32 { 10.0 }  // Default: weight 10.0
+fn default_add_allin_threshold() -> f64 {
+    1.5
+}
+fn default_force_allin_threshold() -> f64 {
+    0.01
+} // 1% - permette sizing vicini allo stack
+fn default_merging_threshold() -> f64 {
+    0.05
+} // 5% - buon compromesso precisione/performance
+fn default_output_dir() -> String {
+    "solved_games".to_string()
+}
+fn default_strategy_bits() -> u8 {
+    16
+} // Default: 16-bit strategy (balanced)
+fn default_regret_bits() -> u8 {
+    16
+} // Default: 16-bit regrets (balanced)
+fn default_ip_bits() -> u8 {
+    16
+} // Default: 16-bit IP cfvalues (balanced)
+fn default_chance_bits() -> u8 {
+    16
+} // Default: 16-bit chance cfvalues (balanced)
+fn default_algorithm() -> String {
+    "dcfr".to_string()
+} // Default: DCFR for backward compatibility
+fn default_enable_pruning() -> bool {
+    false
+} // Default: disabled for backward compatibility
+fn default_use_warmstart() -> bool {
+    false
+} // Default: disabled
+fn default_warmstart_minimal_exploitability_pct() -> f32 {
+    10.0
+} // Default: 10% of pot
+fn default_warmstart_minimal_max_iters() -> usize {
+    1000
+} // Default: max 1000 iterations
+fn default_warmstart_weight() -> f32 {
+    10.0
+} // Default: weight 10.0
 
 fn parse_bet_sizes(
     street: &StreetBetSizes,
@@ -317,16 +347,17 @@ fn main() {
         .unwrap_or_else(|| "config.toml".to_string());
 
     println!("Loading configuration from: {}", config_path);
-    let config_content = fs::read_to_string(&config_path)
-        .expect("Failed to read config file");
+    let config_content = fs::read_to_string(&config_path).expect("Failed to read config file");
 
-    let config: Config = toml::from_str(&config_content)
-        .expect("Failed to parse config file");
+    let config: Config = toml::from_str(&config_content).expect("Failed to parse config file");
 
     println!("Configuration loaded successfully!");
     println!("  OOP range: {}", config.ranges.oop);
     println!("  IP range: {}", config.ranges.ip);
-    println!("  Board: {} {} {}", config.cards.flop, config.cards.turn, config.cards.river);
+    println!(
+        "  Board: {} {} {}",
+        config.cards.flop, config.cards.turn, config.cards.river
+    );
 
     // Parse cards
     let flop = flop_from_str(&config.cards.flop).expect("Invalid flop");
@@ -370,19 +401,22 @@ fn main() {
         config.tree.starting_pot,
         config.tree.effective_stack,
         "flop",
-    ).expect("Invalid flop bet sizes");
+    )
+    .expect("Invalid flop bet sizes");
     let turn_bet_sizes = parse_bet_sizes(
         &config.bet_sizes.turn,
         config.tree.starting_pot,
         config.tree.effective_stack,
         "turn",
-    ).expect("Invalid turn bet sizes");
+    )
+    .expect("Invalid turn bet sizes");
     let river_bet_sizes = parse_bet_sizes(
         &config.bet_sizes.river,
         config.tree.starting_pot,
         config.tree.effective_stack,
         "river",
-    ).expect("Invalid river bet sizes");
+    )
+    .expect("Invalid river bet sizes");
 
     // Create tree config
     let tree_config = TreeConfig {
@@ -404,8 +438,8 @@ fn main() {
     // Build game tree (clone tree_config to allow reuse in warm-start path)
     println!("\nBuilding game tree...");
     let action_tree = ActionTree::new(tree_config.clone()).expect("Failed to build action tree");
-    let mut game = PostFlopGame::with_config(card_config.clone(), action_tree)
-        .expect("Failed to create game");
+    let mut game =
+        PostFlopGame::with_config(card_config.clone(), action_tree).expect("Failed to create game");
 
     // Configure game to calculate accurate memory estimates
     configure_game(&mut game, &config.solver).expect("Failed to configure game");
@@ -429,13 +463,24 @@ fn main() {
     };
 
     println!("\nMemory usage comparison:");
-    println!("  32-bit float:    {:>20} (baseline)", format_size(mem_usage_32bit));
+    println!(
+        "  32-bit float:    {:>20} (baseline)",
+        format_size(mem_usage_32bit)
+    );
 
     let savings_16bit = 100.0 * (1.0 - mem_usage_16bit as f64 / mem_usage_32bit as f64);
-    println!("  16-bit integer:  {:>20} ({:+.1}%)", format_size(mem_usage_16bit), -savings_16bit);
+    println!(
+        "  16-bit integer:  {:>20} ({:+.1}%)",
+        format_size(mem_usage_16bit),
+        -savings_16bit
+    );
 
     let savings_current = 100.0 * (1.0 - mem_usage_current as f64 / mem_usage_32bit as f64);
-    println!("  Current config:  {:>20} ({:+.1}%)", format_size(mem_usage_current), -savings_current);
+    println!(
+        "  Current config:  {:>20} ({:+.1}%)",
+        format_size(mem_usage_current),
+        -savings_current
+    );
 
     // Se dry_run è attivo, mostra dettagli e ferma qui
     if config.solver.dry_run {
@@ -445,16 +490,35 @@ fn main() {
         let total = detailed.total() as f64;
         let to_mb = |bytes: u64| bytes as f64 / 1_048_576.0;
 
-        println!("  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-                 config.solver.strategy_bits, to_mb(detailed.strategy), 100.0 * detailed.strategy as f64 / total);
-        println!("  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-                 config.solver.regret_bits, to_mb(detailed.regrets + detailed.storage4), 100.0 * (detailed.regrets + detailed.storage4) as f64 / total);
-        println!("  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-                 config.solver.ip_bits, to_mb(detailed.ip_cfvalues), 100.0 * detailed.ip_cfvalues as f64 / total);
-        println!("  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-                 config.solver.chance_bits, to_mb(detailed.chance_cfvalues), 100.0 * detailed.chance_cfvalues as f64 / total);
-        println!("  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
-                 to_mb(detailed.misc), 100.0 * detailed.misc as f64 / total);
+        println!(
+            "  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+            config.solver.strategy_bits,
+            to_mb(detailed.strategy),
+            100.0 * detailed.strategy as f64 / total
+        );
+        println!(
+            "  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+            config.solver.regret_bits,
+            to_mb(detailed.regrets + detailed.storage4),
+            100.0 * (detailed.regrets + detailed.storage4) as f64 / total
+        );
+        println!(
+            "  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+            config.solver.ip_bits,
+            to_mb(detailed.ip_cfvalues),
+            100.0 * detailed.ip_cfvalues as f64 / total
+        );
+        println!(
+            "  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+            config.solver.chance_bits,
+            to_mb(detailed.chance_cfvalues),
+            100.0 * detailed.chance_cfvalues as f64 / total
+        );
+        println!(
+            "  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
+            to_mb(detailed.misc),
+            100.0 * detailed.misc as f64 / total
+        );
 
         println!("\n✓ Dry run completato - albero NON risolto");
         println!("Per risolvere, imposta dry_run = false nel config");
@@ -466,20 +530,39 @@ fn main() {
 
     if config.solver.use_warmstart {
         println!("\n=== WARM-START ENABLED ===");
-        let minimal_target_expl = config.tree.starting_pot as f32 * config.solver.warmstart_minimal_exploitability_pct / 100.0;
-        println!("Phase 1: Solving minimal tree (target: {:.1}% exploitability = {:.2} chips)...",
-                 config.solver.warmstart_minimal_exploitability_pct, minimal_target_expl);
+        let minimal_target_expl = config.tree.starting_pot as f32
+            * config.solver.warmstart_minimal_exploitability_pct
+            / 100.0;
+        println!(
+            "Phase 1: Solving minimal tree (target: {:.1}% exploitability = {:.2} chips)...",
+            config.solver.warmstart_minimal_exploitability_pct, minimal_target_expl
+        );
 
         // Create minimal bet sizes
         let minimal_bet_sizes = replace_full_with_minimal(&config.bet_sizes);
 
         // Parse minimal bet sizes
-        let minimal_flop = parse_bet_sizes(&minimal_bet_sizes.flop, config.tree.starting_pot, config.tree.effective_stack, "flop")
-            .expect("Invalid minimal flop bet sizes");
-        let minimal_turn = parse_bet_sizes(&minimal_bet_sizes.turn, config.tree.starting_pot, config.tree.effective_stack, "turn")
-            .expect("Invalid minimal turn bet sizes");
-        let minimal_river = parse_bet_sizes(&minimal_bet_sizes.river, config.tree.starting_pot, config.tree.effective_stack, "river")
-            .expect("Invalid minimal river bet sizes");
+        let minimal_flop = parse_bet_sizes(
+            &minimal_bet_sizes.flop,
+            config.tree.starting_pot,
+            config.tree.effective_stack,
+            "flop",
+        )
+        .expect("Invalid minimal flop bet sizes");
+        let minimal_turn = parse_bet_sizes(
+            &minimal_bet_sizes.turn,
+            config.tree.starting_pot,
+            config.tree.effective_stack,
+            "turn",
+        )
+        .expect("Invalid minimal turn bet sizes");
+        let minimal_river = parse_bet_sizes(
+            &minimal_bet_sizes.river,
+            config.tree.starting_pot,
+            config.tree.effective_stack,
+            "river",
+        )
+        .expect("Invalid minimal river bet sizes");
 
         // Create minimal tree config
         let minimal_tree_config = TreeConfig {
@@ -499,15 +582,19 @@ fn main() {
         };
 
         // Build and configure minimal game
-        let minimal_action_tree = ActionTree::new(minimal_tree_config).expect("Failed to build minimal action tree");
+        let minimal_action_tree =
+            ActionTree::new(minimal_tree_config).expect("Failed to build minimal action tree");
         let mut minimal_game = PostFlopGame::with_config(card_config.clone(), minimal_action_tree)
             .expect("Failed to create minimal game");
 
-        configure_game(&mut minimal_game, &config.solver).expect("Failed to configure minimal game");
+        configure_game(&mut minimal_game, &config.solver)
+            .expect("Failed to configure minimal game");
         minimal_game.allocate_memory();
 
         // Solve minimal tree until target exploitability
-        let minimal_target_expl = config.tree.starting_pot as f32 * config.solver.warmstart_minimal_exploitability_pct / 100.0;
+        let minimal_target_expl = config.tree.starting_pot as f32
+            * config.solver.warmstart_minimal_exploitability_pct
+            / 100.0;
         let minimal_start = std::time::Instant::now();
 
         let mut minimal_iters = 0u32;
@@ -519,7 +606,10 @@ fn main() {
             if i > 0 && i % 10 == 0 {
                 let current_expl = compute_exploitability(&minimal_game);
                 if current_expl <= minimal_target_expl {
-                    println!("  Minimal tree converged at iteration {} (exploitability: {:.6})", i, current_expl);
+                    println!(
+                        "  Minimal tree converged at iteration {} (exploitability: {:.6})",
+                        i, current_expl
+                    );
                     break;
                 }
             }
@@ -527,14 +617,19 @@ fn main() {
 
         let minimal_elapsed = minimal_start.elapsed();
         let final_minimal_expl = compute_exploitability(&minimal_game);
-        println!("  Minimal tree solved in {:.2}s ({} iterations, final expl: {:.6})",
-                 minimal_elapsed.as_secs_f64(), minimal_iters, final_minimal_expl);
+        println!(
+            "  Minimal tree solved in {:.2}s ({} iterations, final expl: {:.6})",
+            minimal_elapsed.as_secs_f64(),
+            minimal_iters,
+            final_minimal_expl
+        );
 
         // Phase 2: Warm-start full tree
         println!("\nPhase 2: Creating full tree and applying warm-start...");
 
         // Rebuild full game with original bet sizes
-        let full_action_tree = ActionTree::new(tree_config).expect("Failed to build full action tree");
+        let full_action_tree =
+            ActionTree::new(tree_config).expect("Failed to build full action tree");
         let mut full_game = PostFlopGame::with_config(card_config, full_action_tree)
             .expect("Failed to create full game");
 
@@ -542,13 +637,14 @@ fn main() {
         full_game.allocate_memory();
 
         // Apply warm-start
-        start_iteration = full_game.warm_start_from(
-            &minimal_game,
-            minimal_iters,
-            config.solver.warmstart_weight
-        ).expect("Failed to apply warm-start");
+        start_iteration = full_game
+            .warm_start_from(&minimal_game, minimal_iters, config.solver.warmstart_weight)
+            .expect("Failed to apply warm-start");
 
-        println!("  Warm-start applied! Starting from iteration {}", start_iteration);
+        println!(
+            "  Warm-start applied! Starting from iteration {}",
+            start_iteration
+        );
         println!("  Phase 3: Solving full tree from warm-start...\n");
 
         // Replace game with full game
@@ -560,7 +656,10 @@ fn main() {
     }
 
     // Print configuration (common for both paths)
-    let algorithm = config.solver.get_algorithm().expect("Invalid algorithm configuration");
+    let algorithm = config
+        .solver
+        .get_algorithm()
+        .expect("Invalid algorithm configuration");
     let algorithm_name = match algorithm {
         postflop_solver::CfrAlgorithm::DCFR => "DCFR (dual discount factors)",
         postflop_solver::CfrAlgorithm::DCFRPlus => "DCFR+ (single discount + clipping)",
@@ -570,18 +669,22 @@ fn main() {
     println!("Using algorithm: {}", algorithm_name);
 
     if config.solver.lazy_normalization {
-        println!("Lazy normalization: enabled (freq: {})",
-                 if config.solver.lazy_normalization_freq == 0 {
-                     "finalization only".to_string()
-                 } else {
-                     format!("every {} iterations", config.solver.lazy_normalization_freq)
-                 });
+        println!(
+            "Lazy normalization: enabled (freq: {})",
+            if config.solver.lazy_normalization_freq == 0 {
+                "finalization only".to_string()
+            } else {
+                format!("every {} iterations", config.solver.lazy_normalization_freq)
+            }
+        );
     }
 
     if config.solver.enable_pruning {
         if algorithm != postflop_solver::CfrAlgorithm::DCFR {
             eprintln!("⚠️  Warning: Pruning is only effective with DCFR algorithm (beta=0.5).");
-            eprintln!("            Other algorithms clip negative regrets, making pruning ineffective.");
+            eprintln!(
+                "            Other algorithms clip negative regrets, making pruning ineffective."
+            );
         }
         println!("Regret-based pruning: ENABLED (dynamic threshold)");
     }
@@ -591,21 +694,47 @@ fn main() {
     let total = detailed.total() as f64;
     let to_mb = |bytes: u64| bytes as f64 / 1_048_576.0;
 
-    println!("  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-             config.solver.strategy_bits, to_mb(detailed.strategy), 100.0 * detailed.strategy as f64 / total);
-    println!("  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-             config.solver.regret_bits, to_mb(detailed.regrets + detailed.storage4), 100.0 * (detailed.regrets + detailed.storage4) as f64 / total);
-    println!("  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-             config.solver.ip_bits, to_mb(detailed.ip_cfvalues), 100.0 * detailed.ip_cfvalues as f64 / total);
-    println!("  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
-             config.solver.chance_bits, to_mb(detailed.chance_cfvalues), 100.0 * detailed.chance_cfvalues as f64 / total);
-    println!("  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
-             to_mb(detailed.misc), 100.0 * detailed.misc as f64 / total);
+    println!(
+        "  Strategy (storage1):      {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+        config.solver.strategy_bits,
+        to_mb(detailed.strategy),
+        100.0 * detailed.strategy as f64 / total
+    );
+    println!(
+        "  Regrets (storage2/4):     {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+        config.solver.regret_bits,
+        to_mb(detailed.regrets + detailed.storage4),
+        100.0 * (detailed.regrets + detailed.storage4) as f64 / total
+    );
+    println!(
+        "  IP CFValues (storage_ip): {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+        config.solver.ip_bits,
+        to_mb(detailed.ip_cfvalues),
+        100.0 * detailed.ip_cfvalues as f64 / total
+    );
+    println!(
+        "  Chance CFValues:          {:>2}-bit  ({:>8.2} MB, {:>5.1}%)",
+        config.solver.chance_bits,
+        to_mb(detailed.chance_cfvalues),
+        100.0 * detailed.chance_cfvalues as f64 / total
+    );
+    println!(
+        "  Misc (node arena, etc):          ({:>8.2} MB, {:>5.1}%)",
+        to_mb(detailed.misc),
+        100.0 * detailed.misc as f64 / total
+    );
 
     // Solve (memory already allocated in warm-start or normal path)
-    let remaining_iters = config.solver.max_iterations.saturating_sub(start_iteration as usize);
-    println!("\nSolving (starting from iter {}, max {} more iterations)...", start_iteration, remaining_iters);
-    let target_exploitability = config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
+    let remaining_iters = config
+        .solver
+        .max_iterations
+        .saturating_sub(start_iteration as usize);
+    println!(
+        "\nSolving (starting from iter {}, max {} more iterations)...",
+        start_iteration, remaining_iters
+    );
+    let target_exploitability =
+        config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
 
     let start_time = std::time::Instant::now();
 
@@ -676,20 +805,24 @@ fn main() {
     let precision_suffix = if config.solver.strategy_bits == 16
         && config.solver.regret_bits == 16
         && config.solver.ip_bits == 16
-        && config.solver.chance_bits == 16 {
-        "16".to_string()  // Standard 16-bit config
+        && config.solver.chance_bits == 16
+    {
+        "16".to_string() // Standard 16-bit config
     } else if config.solver.strategy_bits == 32
         && config.solver.regret_bits == 32
         && config.solver.ip_bits == 32
-        && config.solver.chance_bits == 32 {
-        "32".to_string()  // Full 32-bit precision
+        && config.solver.chance_bits == 32
+    {
+        "32".to_string() // Full 32-bit precision
     } else {
         // Custom mixed precision: encode as s{strategy}r{regret}i{ip}c{chance}
-        format!("s{}r{}i{}c{}",
-                config.solver.strategy_bits,
-                config.solver.regret_bits,
-                config.solver.ip_bits,
-                config.solver.chance_bits)
+        format!(
+            "s{}r{}i{}c{}",
+            config.solver.strategy_bits,
+            config.solver.regret_bits,
+            config.solver.ip_bits,
+            config.solver.chance_bits
+        )
     };
 
     let filename = format!("{}-{}.bin", config_filename, precision_suffix);
@@ -708,8 +841,9 @@ fn main() {
         &game,
         &format!("Config: {}", config_filename),
         &output_path,
-        config.solver.zstd_compression_level
-    ).expect("Failed to save game");
+        config.solver.zstd_compression_level,
+    )
+    .expect("Failed to save game");
 
     // Get actual file size
     let file_size = fs::metadata(&output_path)

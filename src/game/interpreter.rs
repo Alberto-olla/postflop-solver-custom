@@ -522,7 +522,8 @@ impl PostFlopGame {
             for player in 0..2 {
                 let node = self.node();
                 let indices = if node.get_river() != NOT_DEALT {
-                    &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
+                    &self.bunching_num_river[player]
+                        [card_pair_to_index(node.get_turn(), node.get_river())]
                 } else if node.get_turn() != NOT_DEALT {
                     &self.bunching_num_turn[player][node.get_turn() as usize]
                 } else {
@@ -760,7 +761,11 @@ impl PostFlopGame {
                         // 4-bit mode: use packed u8
                         let slice = node.cfvalues_chance_i4_packed();
                         let scale = node.cfvalue_chance_scale();
-                        decode_signed_i4_packed(slice, scale, node.num_actions() * self.num_private_hands(player))
+                        decode_signed_i4_packed(
+                            slice,
+                            scale,
+                            node.num_actions() * self.num_private_hands(player),
+                        )
                     }
                     _ => {
                         // 16-bit mode (default): use i16
@@ -883,8 +888,15 @@ impl PostFlopGame {
                 32 => normalized_strategy(node.strategy(), num_actions),
                 16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
                 8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
-                4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
-                _ => panic!("Invalid strategy_bits: {}. Valid values: 4, 8, 16, 32", self.strategy_bits()),
+                4 => normalized_strategy_compressed_u4_packed(
+                    node.strategy_u4_packed(),
+                    num_actions,
+                    num_hands,
+                ),
+                _ => panic!(
+                    "Invalid strategy_bits: {}. Valid values: 4, 8, 16, 32",
+                    self.strategy_bits()
+                ),
             }
         } else {
             normalized_strategy(node.strategy(), num_actions)
@@ -1104,7 +1116,8 @@ impl PostFlopGame {
                 } else if node.get_river() == NOT_DEALT {
                     &self.bunching_num_turn[player][node.get_turn() as usize]
                 } else {
-                    &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
+                    &self.bunching_num_river[player]
+                        [card_pair_to_index(node.get_turn(), node.get_river())]
                 };
 
                 let mut weights_buf = Vec::new();

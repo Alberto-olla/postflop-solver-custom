@@ -293,12 +293,12 @@ impl GameNode for PostFlopNode {
 
     #[inline]
     fn prev_regret_scale(&self) -> f32 {
-        self.scale2  // Unified with regret_scale
+        self.scale2 // Unified with regret_scale
     }
 
     #[inline]
     fn set_prev_regret_scale(&mut self, scale: f32) {
-        self.scale2 = scale;  // Unified with regret_scale
+        self.scale2 = scale; // Unified with regret_scale
     }
 
     #[inline]
@@ -499,10 +499,10 @@ impl Default for PostFlopNode {
 
 impl PostFlopNode {
     // Bit masks and shifts for packed_state
-    const PLAYER_MASK: u32 = 0x1F;           // Bits 0-4 (5 bits)
-    const TURN_MASK: u32 = 0xFF << 5;        // Bits 5-12 (8 bits)
-    const RIVER_MASK: u32 = 0xFF << 13;      // Bits 13-20 (8 bits)
-    const IS_LOCKED_MASK: u32 = 1 << 21;     // Bit 21
+    const PLAYER_MASK: u32 = 0x1F; // Bits 0-4 (5 bits)
+    const TURN_MASK: u32 = 0xFF << 5; // Bits 5-12 (8 bits)
+    const RIVER_MASK: u32 = 0xFF << 13; // Bits 13-20 (8 bits)
+    const IS_LOCKED_MASK: u32 = 1 << 21; // Bit 21
 
     const TURN_SHIFT: u32 = 5;
     const RIVER_SHIFT: u32 = 13;
@@ -514,7 +514,8 @@ impl PostFlopNode {
 
     #[inline]
     pub(crate) fn set_player(&mut self, player: u8) {
-        self.packed_state = (self.packed_state & !Self::PLAYER_MASK) | (player as u32 & Self::PLAYER_MASK);
+        self.packed_state =
+            (self.packed_state & !Self::PLAYER_MASK) | (player as u32 & Self::PLAYER_MASK);
     }
 
     #[inline]
@@ -524,8 +525,8 @@ impl PostFlopNode {
 
     #[inline]
     pub(crate) fn set_turn(&mut self, turn: Card) {
-        self.packed_state = (self.packed_state & !Self::TURN_MASK)
-            | ((turn as u32) << Self::TURN_SHIFT);
+        self.packed_state =
+            (self.packed_state & !Self::TURN_MASK) | ((turn as u32) << Self::TURN_SHIFT);
     }
 
     #[inline]
@@ -535,8 +536,8 @@ impl PostFlopNode {
 
     #[inline]
     pub(crate) fn set_river(&mut self, river: Card) {
-        self.packed_state = (self.packed_state & !Self::RIVER_MASK)
-            | ((river as u32) << Self::RIVER_SHIFT);
+        self.packed_state =
+            (self.packed_state & !Self::RIVER_MASK) | ((river as u32) << Self::RIVER_SHIFT);
     }
 
     #[inline]

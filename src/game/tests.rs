@@ -1251,24 +1251,27 @@ fn solve_pio_preset_raked() {
 
 #[test]
 fn verify_sapcfr_plus_implementation() {
-    use crate::range::*;
     use crate::bet_size::BetSizeOptions;
-    use crate::solver::*;
-    use crate::interface::*;
-    use crate::utility::*;
     use crate::game::*; // For PostFlopGame
+    use crate::interface::*;
+    use crate::range::*;
+    use crate::solver::*;
+    use crate::utility::*;
     use std::convert::TryFrom;
 
     let oop_range_str = "AhQh";
     let ip_range_str = "AJs:0.00,QTs:0.00,QTo:0.01,Q9o:0.00,Q7o:0.00,Q6s:0.00,Q6o:0.01,Q5o:0.01,Q5s:0.00,Q3o:0.00,Q2s:0.00,JTo:0.00,J9o:0.00,J9s:0.00,J8s:0.00,TT:0.00,T9o:0.00,T9s:0.00,T8s:0.00,T8o:0.00,T7o:0.02,T7s:0.00,T6o:0.01,T6s:0.00,T5o:0.00,T4o:0.00,T4s:0.00,T3s:0.00,98o:0.00,98s:0.00,97o:0.00,97s:0.00,96o:0.00,95o:0.00,95s:0.00,94s:0.00,94o:0.00,93s:0.01,93o:0.00,92o:0.00,88:0.00,87o:0.00,87s:0.00,86o:0.00,86s:0.00,85o:0.00,84o:0.00,83o:0.00,83s:0.00,82o:0.00,77:0.00,76o:0.00,75o:0.00,74s:0.00,74o:0.00,73o:0.00,73s:0.00,72o:0.00,72s:0.00,66:0.00,65s:0.00,64o:0.00,63o:0.00,62o:0.00,62s:0.00,55:0.00,54s:0.00,54o:0.00,53o:0.00,52s:0.00,52o:0.00,43o:0.00,42s:0.00,42o:0.00,33:0.00,32s:0.00,32o:0.01,22:0.01";
 
     let card_config = CardConfig {
-        range: [oop_range_str.parse().unwrap(), ip_range_str.parse().unwrap()],
+        range: [
+            oop_range_str.parse().unwrap(),
+            ip_range_str.parse().unwrap(),
+        ],
         flop: flop_from_str("7h6d6h").unwrap(),
         turn: card_from_str("5s").unwrap(),
         ..Default::default()
     };
-    
+
     // Config mirroring the TOML file
     let tree_config = TreeConfig {
         initial_state: BoardState::Turn,
@@ -1296,59 +1299,77 @@ fn verify_sapcfr_plus_implementation() {
     // 1. Test Isolation: Allocate with DCFR first, ensure storage4 is NOT allocated
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
     game.allocate_memory_with_mode(QuantizationMode::Int16);
-    
-    assert_eq!(game.memory_usage_storage4_mb(), 0.0, "Storage4 should NOT be allocated for DCFR");
+
+    assert_eq!(
+        game.memory_usage_storage4_mb(),
+        0.0,
+        "Storage4 should NOT be allocated for DCFR"
+    );
 
     // Re-initialize for SAPCFR+ test
     let mut game = PostFlopGame::with_config(
         CardConfig {
-            range: [oop_range_str.parse().unwrap(), ip_range_str.parse().unwrap()],
+            range: [
+                oop_range_str.parse().unwrap(),
+                ip_range_str.parse().unwrap(),
+            ],
             flop: flop_from_str("7h6d6h").unwrap(),
             turn: card_from_str("5s").unwrap(),
             ..Default::default()
         },
-        ActionTree::new(
-             TreeConfig {
-                initial_state: BoardState::Turn,
-                starting_pot: 3900,
-                effective_stack: 17600,
-                turn_bet_sizes: [
-                    BetSizeOptions::try_from(("full", "full")).unwrap(),
-                    BetSizeOptions::try_from(("full", "full")).unwrap(),
-                ],
-                river_bet_sizes: [
-                    BetSizeOptions::try_from(("full", "full")).unwrap(),
-                    BetSizeOptions::try_from(("full", "full")).unwrap(),
-                ],
-                rake_rate: 0.0,
-                rake_cap: 0.0,
-                add_allin_threshold: 1.5,
-                force_allin_threshold: 0.15,
-                merging_threshold: 0.1,
-                ..Default::default()
-            }
-        ).unwrap()
-    ).unwrap();
+        ActionTree::new(TreeConfig {
+            initial_state: BoardState::Turn,
+            starting_pot: 3900,
+            effective_stack: 17600,
+            turn_bet_sizes: [
+                BetSizeOptions::try_from(("full", "full")).unwrap(),
+                BetSizeOptions::try_from(("full", "full")).unwrap(),
+            ],
+            river_bet_sizes: [
+                BetSizeOptions::try_from(("full", "full")).unwrap(),
+                BetSizeOptions::try_from(("full", "full")).unwrap(),
+            ],
+            rake_rate: 0.0,
+            rake_cap: 0.0,
+            add_allin_threshold: 1.5,
+            force_allin_threshold: 0.15,
+            merging_threshold: 0.1,
+            ..Default::default()
+        })
+        .unwrap(),
+    )
+    .unwrap();
 
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
     game.allocate_memory_with_mode(QuantizationMode::Int16);
-    
+
     let storage4_mb = game.memory_usage_storage4_mb();
     assert!(storage4_mb > 0.0, "Storage4 MUST be allocated for SAPCFR+");
     println!("SAPCFR+ Storage4 Size: {:.2} MB", storage4_mb);
 
     // 3. Test Convergence
     let max_iterations = 200;
-    println!("Starting SAPCFR+ Solver for {} iterations...", max_iterations);
-    
+    println!(
+        "Starting SAPCFR+ Solver for {} iterations...",
+        max_iterations
+    );
+
     let exploitability = solve(&mut game, max_iterations, 0.0, true);
-    
+
     println!("Final Exploitability: {:.6}", exploitability);
-    
-    assert!(exploitability < 1.0, "Exploitability should be < 1.0 after 200 iterations (Actual: {})", exploitability);
+
+    assert!(
+        exploitability < 1.0,
+        "Exploitability should be < 1.0 after 200 iterations (Actual: {})",
+        exploitability
+    );
     assert!(exploitability >= 0.0, "Exploitability must be non-negative");
 
     // 4. Verify Finalization releases storage4
     game.finalize_and_release();
-    assert_eq!(game.memory_usage_storage4_mb(), 0.0, "Storage4 should be released after finalization");
+    assert_eq!(
+        game.memory_usage_storage4_mb(),
+        0.0,
+        "Storage4 should be released after finalization"
+    );
 }

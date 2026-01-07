@@ -1,4 +1,3 @@
-
 use postflop_solver::*;
 
 #[test]
@@ -33,7 +32,8 @@ fn test_resume_with_checkpoint() {
 
     // RESUME TEST: Run 30 iterations, save checkpoint, load, run remaining 10 iterations
     let action_tree_resume = ActionTree::new(tree_config.clone()).unwrap();
-    let mut game_resume = PostFlopGame::with_config(card_config.clone(), action_tree_resume).unwrap();
+    let mut game_resume =
+        PostFlopGame::with_config(card_config.clone(), action_tree_resume).unwrap();
     game_resume.allocate_memory();
 
     // Part 1: First 30 iterations

@@ -17,13 +17,18 @@ fn main() {
             println!("Strategy bits: {}", game.strategy_bits());
             println!("Compression enabled: {}", game.is_compression_enabled());
             println!("Storage mode: {:?}", game.storage_mode());
-            
+
             println!("\n=== MEMORIA ===");
-            println!("Estimated memory usage: {:.2} MB", game.estimated_memory_usage() as f64 / 1_048_576.0);
+            println!(
+                "Estimated memory usage: {:.2} MB",
+                game.estimated_memory_usage() as f64 / 1_048_576.0
+            );
             let (mem_uncompressed, mem_compressed) = game.memory_usage();
-            println!("Current memory usage: {:.2} MB (uncompressed), {:.2} MB (compressed)",
-                     mem_uncompressed as f64 / 1_048_576.0,
-                     mem_compressed as f64 / 1_048_576.0);
+            println!(
+                "Current memory usage: {:.2} MB (uncompressed), {:.2} MB (compressed)",
+                mem_uncompressed as f64 / 1_048_576.0,
+                mem_compressed as f64 / 1_048_576.0
+            );
             println!("Actual storage usage: {:.2} MB", game.memory_usage_mb());
 
             // Analizza i dati delle strategie - usa l'API pubblica
@@ -34,18 +39,22 @@ fn main() {
             let storage_mb = game.memory_usage_mb();
             let bytes_per_element = if game.is_compression_enabled() {
                 if game.strategy_bits() == 8 {
-                    1 + 2  // 1 byte strategy + 2 bytes regrets
+                    1 + 2 // 1 byte strategy + 2 bytes regrets
                 } else {
-                    2 + 2  // 2 bytes strategy + 2 bytes regrets
+                    2 + 2 // 2 bytes strategy + 2 bytes regrets
                 }
             } else {
-                4 + 4  // 4 bytes strategy + 4 bytes regrets
+                4 + 4 // 4 bytes strategy + 4 bytes regrets
             };
 
-            let total_elements_estimate = (storage_mb * 1_048_576.0 / bytes_per_element as f64) as u64;
+            let total_elements_estimate =
+                (storage_mb * 1_048_576.0 / bytes_per_element as f64) as u64;
 
-            println!("Estimated total strategy elements: ~{}", total_elements_estimate);
-            
+            println!(
+                "Estimated total strategy elements: ~{}",
+                total_elements_estimate
+            );
+
             println!("\n=== VALUTAZIONE TECNICHE DI COMPRESSIONE ===");
 
             // Analisi basata sul quantization mode attuale
@@ -54,23 +63,27 @@ fn main() {
                 println!("   Questo è il formato meno efficiente in termini di memoria.");
 
                 let current_bytes = total_elements_estimate * 8; // 4 bytes strategy + 4 bytes regrets
-                let with_16bit = total_elements_estimate * 4;    // 2 bytes strategy + 2 bytes regrets
-                let with_8bit = total_elements_estimate * 3;     // 1 byte strategy + 2 bytes regrets
+                let with_16bit = total_elements_estimate * 4; // 2 bytes strategy + 2 bytes regrets
+                let with_8bit = total_elements_estimate * 3; // 1 byte strategy + 2 bytes regrets
 
                 let saving_16bit = current_bytes - with_16bit;
                 let saving_8bit = current_bytes - with_8bit;
 
                 println!("\n1. QUANTIZZAZIONE 16-BIT (quantization = \"16bit\"):");
-                println!("   Attuale (Float32): {} MB", current_bytes as f64 / 1_048_576.0);
+                println!(
+                    "   Attuale (Float32): {} MB",
+                    current_bytes as f64 / 1_048_576.0
+                );
                 println!("   Con 16-bit: {} MB", with_16bit as f64 / 1_048_576.0);
-                println!("   Risparmio: {} MB ({:.1}%)",
-                         saving_16bit as f64 / 1_048_576.0,
-                         saving_16bit as f64 / current_bytes as f64 * 100.0);
+                println!(
+                    "   Risparmio: {} MB ({:.1}%)",
+                    saving_16bit as f64 / 1_048_576.0,
+                    saving_16bit as f64 / current_bytes as f64 * 100.0
+                );
                 println!("   ✓ FORTEMENTE RACCOMANDATO");
                 println!("   ✓ GIÀ IMPLEMENTATO - basta cambiare config TOML");
-
             }
-            
+
             println!("\n2. QUANTIZZAZIONE LINEARE:");
             println!("   ✓ GIÀ IMPLEMENTATA per 16-bit");
             println!("   - Formula: quantized = round(value * 65535 / max)");
@@ -80,18 +93,18 @@ fn main() {
             println!("   Applicabilità: BASSA");
             println!("   - Le strategie sono probabilità normalizzate, non sequenze temporali");
             println!("   - I valori non hanno correlazione sequenziale");
-            
+
             println!("\n4. VARINT:");
             println!("   Applicabilità: BASSA");
             println!("   - Efficace solo se la maggior parte dei valori è < 127");
             println!("   - Le strategie normalizzate usano tutto il range 0-255");
             println!("   ✗ NON CONSIGLIATO");
-            
+
             println!("\n5. FIXED POINT:");
             println!("   Applicabilità: BASSA");
             println!("   - Le strategie sono già normalizzate (0-1)");
             println!("   - La quantizzazione lineare è più efficiente");
-            
+
             println!("\n=== RACCOMANDAZIONI FINALI ===");
 
             if game.quantization_mode() == QuantizationMode::Float32 {
@@ -104,7 +117,6 @@ fn main() {
                 println!("   2. Risparmio atteso: ~62.5% di memoria");
                 println!("   3. Impatto sulla convergenza: MINIMO");
                 println!("   4. Già implementato: SÌ - nessun codice da scrivere!");
-
             } else if game.strategy_bits() == 16 {
                 println!("\n🎯 OTTIMIZZAZIONE DISPONIBILE:");
                 println!("   Aggiungi al file TOML:");
@@ -112,7 +124,6 @@ fn main() {
                 println!("   strategy_bits = 8");
                 println!("   ");
                 println!("   Risparmio atteso: ~25% di memoria");
-
             } else {
                 println!("\n✅ CONFIGURAZIONE OTTIMALE:");
                 println!("   Stai già usando la configurazione più efficiente!");
@@ -141,4 +152,3 @@ fn main() {
         }
     }
 }
-

@@ -7,9 +7,9 @@
 //! Run with: cargo test --release --test performance_regression -- --nocapture
 
 use postflop_solver::*;
-use std::time::Instant;
-use std::fs;
 use serde::Deserialize;
+use std::fs;
+use std::time::Instant;
 
 // Same config structures as solve_from_config example
 #[derive(Debug, Deserialize)]
@@ -85,21 +85,34 @@ struct SolverSettings {
     chance_bits: u8,
 }
 
-fn default_add_allin_threshold() -> f64 { 1.5 }
-fn default_force_allin_threshold() -> f64 { 0.15 }
-fn default_merging_threshold() -> f64 { 0.1 }
-fn default_strategy_bits() -> u8 { 16 }
-fn default_regret_bits() -> u8 { 16 }
-fn default_ip_bits() -> u8 { 16 }
-fn default_chance_bits() -> u8 { 16 }
+fn default_add_allin_threshold() -> f64 {
+    1.5
+}
+fn default_force_allin_threshold() -> f64 {
+    0.15
+}
+fn default_merging_threshold() -> f64 {
+    0.1
+}
+fn default_strategy_bits() -> u8 {
+    16
+}
+fn default_regret_bits() -> u8 {
+    16
+}
+fn default_ip_bits() -> u8 {
+    16
+}
+fn default_chance_bits() -> u8 {
+    16
+}
 
 /// Load game from TOML config file
 fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
-    let config_content = fs::read_to_string(path)
-        .expect(&format!("Failed to read config file: {}", path));
+    let config_content =
+        fs::read_to_string(path).expect(&format!("Failed to read config file: {}", path));
 
-    let config: Config = toml::from_str(&config_content)
-        .expect("Failed to parse config file");
+    let config: Config = toml::from_str(&config_content).expect("Failed to parse config file");
 
     // Parse cards
     let flop = flop_from_str(&config.cards.flop).expect("Invalid flop");
@@ -143,7 +156,8 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
         config.tree.starting_pot,
         config.tree.effective_stack,
         "flop",
-    ).expect("Invalid flop bet sizes");
+    )
+    .expect("Invalid flop bet sizes");
 
     let turn_bet_sizes = parse_bet_sizes_with_preset(
         &config.bet_sizes.turn.oop_bet,
@@ -153,7 +167,8 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
         config.tree.starting_pot,
         config.tree.effective_stack,
         "turn",
-    ).expect("Invalid turn bet sizes");
+    )
+    .expect("Invalid turn bet sizes");
 
     let river_bet_sizes = parse_bet_sizes_with_preset(
         &config.bet_sizes.river.oop_bet,
@@ -163,7 +178,8 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
         config.tree.starting_pot,
         config.tree.effective_stack,
         "river",
-    ).expect("Invalid river bet sizes");
+    )
+    .expect("Invalid river bet sizes");
 
     let tree_config = TreeConfig {
         initial_state,
@@ -181,8 +197,8 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
     };
 
     let action_tree = ActionTree::new(tree_config).expect("Failed to build action tree");
-    let mut game = PostFlopGame::with_config(card_config, action_tree)
-        .expect("Failed to create game");
+    let mut game =
+        PostFlopGame::with_config(card_config, action_tree).expect("Failed to create game");
 
     // Apply precision settings from TOML
     game.set_strategy_bits(config.solver.strategy_bits);
@@ -191,7 +207,8 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
     game.set_chance_bits(config.solver.chance_bits);
 
     // Calculate target exploitability from percentage
-    let target_expl = config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
+    let target_expl =
+        config.tree.starting_pot as f32 * config.solver.target_exploitability_pct / 100.0;
 
     (game, config.solver.max_iterations as u32, target_expl)
 }
@@ -220,7 +237,10 @@ fn test_performance_dcfr_16bit_node03_turn() {
 
     // Print header before solving
     println!("\n=== DCFR 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!(
+        "Baseline: {} iterations, {:.2}s",
+        BASELINE_ITERATIONS, BASELINE_TIME_SECS
+    );
 
     // Solve with timing
     let start = Instant::now();
@@ -229,7 +249,10 @@ fn test_performance_dcfr_16bit_node03_turn() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(
@@ -250,9 +273,11 @@ fn test_performance_dcfr_16bit_node03_turn() {
 
     // SUCCESS: Print if performance improved
     if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-                 BASELINE_TIME_SECS - time_secs,
-                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+        println!(
+            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+            BASELINE_TIME_SECS - time_secs,
+            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
+        );
     }
 }
 
@@ -280,7 +305,10 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
 
     // Print header before solving
     println!("\n=== DCFR+ 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!(
+        "Baseline: {} iterations, {:.2}s",
+        BASELINE_ITERATIONS, BASELINE_TIME_SECS
+    );
 
     // Solve with timing
     let start = Instant::now();
@@ -289,7 +317,10 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(
@@ -310,9 +341,11 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
 
     // SUCCESS: Print if performance improved
     if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-                 BASELINE_TIME_SECS - time_secs,
-                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+        println!(
+            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+            BASELINE_TIME_SECS - time_secs,
+            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
+        );
     }
 }
 
@@ -340,7 +373,10 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
 
     // Print header before solving
     println!("\n=== SAPCFR+ 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!(
+        "Baseline: {} iterations, {:.2}s",
+        BASELINE_ITERATIONS, BASELINE_TIME_SECS
+    );
 
     // Solve with timing
     let start = Instant::now();
@@ -349,7 +385,10 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(
@@ -370,9 +409,11 @@ fn test_performance_sapcfrplus_16bit_node03_turn() {
 
     // SUCCESS: Print if performance improved
     if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-                 BASELINE_TIME_SECS - time_secs,
-                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+        println!(
+            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+            BASELINE_TIME_SECS - time_secs,
+            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
+        );
     }
 }
 
@@ -400,7 +441,10 @@ fn test_performance_pdcfrplus_16bit_node03_turn() {
 
     // Print header before solving
     println!("\n=== PDCFR+ 16-bit Performance ===");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!(
+        "Baseline: {} iterations, {:.2}s",
+        BASELINE_ITERATIONS, BASELINE_TIME_SECS
+    );
 
     // Solve with timing
     let start = Instant::now();
@@ -409,7 +453,10 @@ fn test_performance_pdcfrplus_16bit_node03_turn() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(
@@ -430,9 +477,11 @@ fn test_performance_pdcfrplus_16bit_node03_turn() {
 
     // SUCCESS: Print if performance improved
     if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-                 BASELINE_TIME_SECS - time_secs,
-                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+        println!(
+            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+            BASELINE_TIME_SECS - time_secs,
+            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
+        );
     }
 }
 
@@ -483,14 +532,26 @@ fn test_compare_all_algorithms_node03_turn() {
     println!("\n┌─────────────┬──────────┬─────────────────┐");
     println!("│ Algorithm   │ Time (s) │ Exploitability  │");
     println!("├─────────────┼──────────┼─────────────────┤");
-    println!("│ DCFR        │ {:>8.2} │ {:>15.6} │",
-             dcfr_time.as_secs_f32(), dcfr_expl);
-    println!("│ DCFR+       │ {:>8.2} │ {:>15.6} │",
-             dcfrplus_time.as_secs_f32(), dcfrplus_expl);
-    println!("│ PDCFR+      │ {:>8.2} │ {:>15.6} │",
-             pdcfrplus_time.as_secs_f32(), pdcfrplus_expl);
-    println!("│ SAPCFR+     │ {:>8.2} │ {:>15.6} │",
-             sapcfr_time.as_secs_f32(), sapcfr_expl);
+    println!(
+        "│ DCFR        │ {:>8.2} │ {:>15.6} │",
+        dcfr_time.as_secs_f32(),
+        dcfr_expl
+    );
+    println!(
+        "│ DCFR+       │ {:>8.2} │ {:>15.6} │",
+        dcfrplus_time.as_secs_f32(),
+        dcfrplus_expl
+    );
+    println!(
+        "│ PDCFR+      │ {:>8.2} │ {:>15.6} │",
+        pdcfrplus_time.as_secs_f32(),
+        pdcfrplus_expl
+    );
+    println!(
+        "│ SAPCFR+     │ {:>8.2} │ {:>15.6} │",
+        sapcfr_time.as_secs_f32(),
+        sapcfr_expl
+    );
     println!("└─────────────┴──────────┴─────────────────┘");
 
     // All should reach target
@@ -510,14 +571,14 @@ fn test_performance_dcfr_8bit_regrets_node03_turn() {
 
     // Baseline from user report was 2.64s (with thread_rng)
     // We expect this to be much faster now, potentially closer to 1.18s (16-bit)
-    const BASELINE_TIME_SECS: f32 = 2.64; 
+    const BASELINE_TIME_SECS: f32 = 2.64;
 
     // Load game from TOML
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
 
     // Configure for DCFR with 8-bit regrets
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
-    
+
     // Override regret precision to 8-bit
     game.set_regret_bits(8);
     game.set_strategy_bits(16);
@@ -533,13 +594,17 @@ fn test_performance_dcfr_8bit_regrets_node03_turn() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(final_expl <= target_expl);
-    
+
     // Verification of speedup
-    if time_secs < BASELINE_TIME_SECS * 0.70 { // Expect at least 30% improvement
+    if time_secs < BASELINE_TIME_SECS * 0.70 {
+        // Expect at least 30% improvement
         println!("✓ Performance IMPROVED significantly! Time reduced from {:.2}s to {:.2}s ({:.1}% reduction)",
                  BASELINE_TIME_SECS, time_secs, (1.0 - time_secs / BASELINE_TIME_SECS) * 100.0);
     }
@@ -574,7 +639,10 @@ fn test_performance_dcfr_mixed_precision_s16r8i8c4() {
     // Print header before solving
     println!("\n=== DCFR Mixed-Precision (s16r8i8c4) Performance ===");
     println!("Configuration: strategy=16bit, regret=8bit, ip=8bit, chance=4bit");
-    println!("Baseline: {} iterations, {:.2}s", BASELINE_ITERATIONS, BASELINE_TIME_SECS);
+    println!(
+        "Baseline: {} iterations, {:.2}s",
+        BASELINE_ITERATIONS, BASELINE_TIME_SECS
+    );
 
     // Solve with timing
     let start = Instant::now();
@@ -583,7 +651,10 @@ fn test_performance_dcfr_mixed_precision_s16r8i8c4() {
     let time_secs = duration.as_secs_f32();
 
     println!("Current:  Time {:.2}s", time_secs);
-    println!("Final exploitability: {:.6} (target: {:.1})", final_expl, target_expl);
+    println!(
+        "Final exploitability: {:.6} (target: {:.1})",
+        final_expl, target_expl
+    );
 
     // Assertions
     assert!(
@@ -604,8 +675,10 @@ fn test_performance_dcfr_mixed_precision_s16r8i8c4() {
 
     // SUCCESS: Print if performance improved
     if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!("✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-                 BASELINE_TIME_SECS - time_secs,
-                 ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0));
+        println!(
+            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
+            BASELINE_TIME_SECS - time_secs,
+            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
+        );
     }
 }

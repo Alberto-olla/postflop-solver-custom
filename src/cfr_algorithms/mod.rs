@@ -1,3 +1,6 @@
+pub mod algorithm;
+pub mod algorithms;
+pub mod experimental;
 /// Nuova architettura trait-based per algoritmi CFR
 ///
 /// Questo modulo implementa un sistema modulare per gli algoritmi CFR che:
@@ -8,8 +11,16 @@
 ///
 /// # Struttura
 /// - `traits`: Definizione trait CfrAlgorithmTrait e DiscountParams
-/// - `algorithms`: Implementazioni concrete (DCFR, DCFR+, PDCFR+, SAPCFR+)
+/// - `algorithms`: Implementazioni concrete principali (DCFR, DCFR+) - raccomandati per produzione
+/// - `experimental`: Algoritmi sperimentali (PDCFR+, SAPCFR+) - meno supportati
 /// - `algorithm`: Enum wrapper per dispatch statico
+///
+/// # Algoritmi Raccomandati
+/// - **DCFR**: Original Discounted CFR
+/// - **DCFR+**: DCFR con regret floor clipping (raccomandato)
+///
+/// # Algoritmi Sperimentali
+/// Per algoritmi sperimentali (PDCFR+, SAPCFR+), vedi il modulo `experimental`.
 ///
 /// # Esempio
 /// ```ignore
@@ -19,12 +30,14 @@
 /// let params = algo.compute_discounts(10);
 /// println!("Alpha: {}, Gamma: {}", params.alpha_t, params.gamma_t);
 /// ```
-
 pub mod traits;
-pub mod algorithms;
-pub mod algorithm;
 
 // Re-exports pubblici
 pub use algorithm::CfrAlgorithmEnum;
 pub use traits::{CfrAlgorithmTrait, DiscountParams};
-pub use algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm, PdcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+
+// Algoritmi principali (raccomandati)
+pub use algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm};
+
+// Nota: Gli algoritmi sperimentali (PdcfrPlusAlgorithm, SapcfrPlusAlgorithm)
+// sono disponibili nel modulo `experimental` e richiedono import esplicito

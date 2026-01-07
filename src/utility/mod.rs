@@ -224,7 +224,9 @@ pub(crate) fn encode_signed_slice(dst: &mut [i16], slice: &[f32]) -> f32 {
 #[inline]
 fn fast_xorshift32(seed: &mut u32) -> u32 {
     let mut x = *seed;
-    if x == 0 { x = 0xACE1u32; } // Avoid zero seed
+    if x == 0 {
+        x = 0xACE1u32;
+    } // Avoid zero seed
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
@@ -259,7 +261,9 @@ pub(crate) fn encode_unsigned_slice(dst: &mut [u16], slice: &[f32]) -> f32 {
     dst.iter_mut().zip(slice).for_each(|(d, s)| {
         // Clamp to avoid overflow/UB from floating point errors and handle NaN
         let s_safe = if s.is_finite() { *s } else { 0.0 };
-        let value = (s_safe * encoder + 0.49999997).min(u16::MAX as f32).max(0.0);
+        let value = (s_safe * encoder + 0.49999997)
+            .min(u16::MAX as f32)
+            .max(0.0);
         *d = unsafe { value.to_int_unchecked::<i32>() as u16 }
     });
     scale
@@ -273,12 +277,15 @@ pub(crate) fn encode_unsigned_strategy_u8(dst: &mut [u8], slice: &[f32], base_se
     let scale = if scale.is_finite() { scale } else { 0.0 };
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = u8::MAX as f32 / scale_nonzero;
-    dst.iter_mut().enumerate().zip(slice).for_each(|((i, d), s)| {
-        let s_safe = if s.is_finite() { *s } else { 0.0 };
-        let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
-        let mut seed = base_seed ^ (i as u32);
-        *d = stochastic_round(scaled, &mut seed) as u8;
-    });
+    dst.iter_mut()
+        .enumerate()
+        .zip(slice)
+        .for_each(|((i, d), s)| {
+            let s_safe = if s.is_finite() { *s } else { 0.0 };
+            let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
+            let mut seed = base_seed ^ (i as u32);
+            *d = stochastic_round(scaled, &mut seed) as u8;
+        });
     scale
 }
 
@@ -290,16 +297,18 @@ pub(crate) fn encode_unsigned_regrets_u8(dst: &mut [u8], slice: &[f32], base_see
     let scale = if scale.is_finite() { scale } else { 0.0 };
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
     let encoder = u8::MAX as f32 / scale_nonzero;
-    dst.iter_mut().enumerate().zip(slice).for_each(|((i, d), s)| {
-        let s_safe = if s.is_finite() { *s } else { 0.0 };
-        // Clamp negative values to 0 (CFR+ Requirement)
-        let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
-        let mut seed = base_seed ^ (i as u32);
-        *d = stochastic_round(scaled, &mut seed) as u8;
-    });
+    dst.iter_mut()
+        .enumerate()
+        .zip(slice)
+        .for_each(|((i, d), s)| {
+            let s_safe = if s.is_finite() { *s } else { 0.0 };
+            // Clamp negative values to 0 (CFR+ Requirement)
+            let scaled = (s_safe * encoder).min(u8::MAX as f32).max(0.0);
+            let mut seed = base_seed ^ (i as u32);
+            *d = stochastic_round(scaled, &mut seed) as u8;
+        });
     scale
 }
-
 
 /// Encodes the `f32` slice to the `i16` slice using logarithmic compression (signed magnitude biasing).
 /// This compresses the dynamic range, allowing better precision for both small and large values.
@@ -329,8 +338,6 @@ pub(crate) fn encode_signed_slice_log(dst: &mut [i16], slice: &[f32]) -> f32 {
     scale
 }
 
-
-
 /// Encodes the `f32` slice to the `i8` slice for signed values (e.g., cfvalues_chance), and returns the scale.
 /// Uses signed quantization: maps [-max_abs, max_abs] to [-127, 127].
 /// Note: We use i8::MAX (127) instead of full range to avoid overflow issues.
@@ -338,7 +345,7 @@ pub(crate) fn encode_signed_slice_log(dst: &mut [i16], slice: &[f32]) -> f32 {
 pub(crate) fn encode_signed_i8(dst: &mut [i8], slice: &[f32], base_seed: u32) -> f32 {
     let scale = slice_absolute_max(slice);
     let scale_nonzero = if scale == 0.0 { 1.0 } else { scale };
-    let encoder = i8::MAX as f32 / scale_nonzero;  // encoder = 127 / max_abs
+    let encoder = i8::MAX as f32 / scale_nonzero; // encoder = 127 / max_abs
 
     dst.iter_mut()
         .enumerate()
@@ -398,11 +405,7 @@ pub(crate) fn decode_signed_i4_packed(src: &[u8], scale: f32, len: usize) -> Vec
     let mut dst = Vec::with_capacity(len);
     for i in 0..len {
         let byte = src[i / 2];
-        let nibble = if i % 2 == 0 {
-            byte & 0x0F
-        } else {
-            byte >> 4
-        };
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
         // Sign extension
         let val = ((nibble << 4) as i8) >> 4;
         dst.push(val as f32 * decoder);
@@ -447,11 +450,7 @@ pub(crate) fn decode_unsigned_u4_packed(src: &[u8], scale: f32, len: usize) -> V
     let mut dst = Vec::with_capacity(len);
     for i in 0..len {
         let byte = src[i / 2];
-        let nibble = if i % 2 == 0 {
-            byte & 0x0F
-        } else {
-            byte >> 4
-        };
+        let nibble = if i % 2 == 0 { byte & 0x0F } else { byte >> 4 };
         dst.push(nibble as f32 * decoder);
     }
     dst
@@ -677,20 +676,27 @@ fn compute_cfvalue_recursive<T: Game>(
                     node.cfvalues_chance_mut().copy_from_slice(result);
                 }
                 16 => {
-                    let cfv_scale = encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
+                    let cfv_scale =
+                        encode_signed_slice(node.cfvalues_chance_compressed_mut(), result);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
                 8 => {
-                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let seed =
+                        (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
                     let cfv_scale = encode_signed_i8(node.cfvalues_chance_i8_mut(), result, seed);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
                 4 => {
-                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
-                    let cfv_scale = encode_signed_i4_packed(node.cfvalues_chance_i4_packed_mut(), result, seed);
+                    let seed =
+                        (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let cfv_scale =
+                        encode_signed_i4_packed(node.cfvalues_chance_i4_packed_mut(), result, seed);
                     node.set_cfvalue_chance_scale(cfv_scale);
                 }
-                _ => panic!("Invalid chance_bits: {}. Valid values: 4, 8, 16, 32", game.chance_bits()),
+                _ => panic!(
+                    "Invalid chance_bits: {}. Valid values: 4, 8, 16, 32",
+                    game.chance_bits()
+                ),
             }
         }
     }
@@ -712,18 +718,34 @@ fn compute_cfvalue_recursive<T: Game>(
         #[cfg(feature = "custom-alloc")]
         let mut strategy = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            16 => {
+                normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions)
+            }
             8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut strategy = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
 
         // node-locking
@@ -743,15 +765,20 @@ fn compute_cfvalue_recursive<T: Game>(
                     node.cfvalues_mut().copy_from_slice(&cfv_actions);
                 }
                 16 => {
-                    let cfv_scale = encode_signed_slice(node.cfvalues_compressed_mut(), &cfv_actions);
+                    let cfv_scale =
+                        encode_signed_slice(node.cfvalues_compressed_mut(), &cfv_actions);
                     node.set_cfvalue_scale(cfv_scale);
                 }
                 8 => {
-                    let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                    let seed =
+                        (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
                     let cfv_scale = encode_signed_i8(node.cfvalues_i8_mut(), &cfv_actions, seed);
                     node.set_cfvalue_scale(cfv_scale);
                 }
-                _ => panic!("Invalid regret_bits (for cfvalues): {}. Valid values: 8, 16, 32", game.regret_bits()),
+                _ => panic!(
+                    "Invalid regret_bits (for cfvalues): {}. Valid values: 8, 16, 32",
+                    game.regret_bits()
+                ),
             }
         }
     }
@@ -771,18 +798,34 @@ fn compute_cfvalue_recursive<T: Game>(
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            16 => {
+                normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions)
+            }
             8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
 
         // node-locking
@@ -818,23 +861,27 @@ fn compute_cfvalue_recursive<T: Game>(
         let result = unsafe { &*(result as *const _ as *const [f32]) };
         match game.ip_bits() {
             32 => {
-                 node.cfvalues_ip_mut().copy_from_slice(result);
+                node.cfvalues_ip_mut().copy_from_slice(result);
             }
             16 => {
-                 let cfv_scale = encode_signed_slice(node.cfvalues_ip_compressed_mut(), result);
-                 node.set_cfvalue_ip_scale(cfv_scale);
+                let cfv_scale = encode_signed_slice(node.cfvalues_ip_compressed_mut(), result);
+                node.set_cfvalue_ip_scale(cfv_scale);
             }
             8 => {
-                 let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
-                 let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result, seed);
-                 node.set_cfvalue_ip_scale(cfv_scale);
+                let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                let cfv_scale = encode_signed_i8(node.cfvalues_ip_i8_mut(), result, seed);
+                node.set_cfvalue_ip_scale(cfv_scale);
             }
             4 => {
-                 let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
-                 let cfv_scale = encode_signed_i4_packed(node.cfvalues_ip_i4_packed_mut(), result, seed);
-                 node.set_cfvalue_ip_scale(cfv_scale);
+                let seed = (node.action_indices().start as u32).wrapping_shl(16) ^ (player as u32);
+                let cfv_scale =
+                    encode_signed_i4_packed(node.cfvalues_ip_i4_packed_mut(), result, seed);
+                node.set_cfvalue_ip_scale(cfv_scale);
             }
-            _ => panic!("Invalid ip_bits: {}. Valid values: 4, 8, 16, 32", game.ip_bits()),
+            _ => panic!(
+                "Invalid ip_bits: {}. Valid values: 4, 8, 16, 32",
+                game.ip_bits()
+            ),
         }
     }
 }
@@ -958,18 +1005,34 @@ fn compute_best_cfv_recursive<T: Game>(
         #[cfg(feature = "custom-alloc")]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy_custom_alloc(node.strategy(), num_actions),
-            16 => normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions),
+            16 => {
+                normalized_strategy_compressed_custom_alloc(node.strategy_compressed(), num_actions)
+            }
             8 => normalized_strategy_compressed_u8_custom_alloc(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed_custom_alloc(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed_custom_alloc(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
         #[cfg(not(feature = "custom-alloc"))]
         let mut cfreach_actions = match game.strategy_bits() {
             32 => normalized_strategy(node.strategy(), num_actions),
             16 => normalized_strategy_compressed(node.strategy_compressed(), num_actions),
             8 => normalized_strategy_compressed_u8(node.strategy_u8(), num_actions),
-            4 => normalized_strategy_compressed_u4_packed(node.strategy_u4_packed(), num_actions, num_hands),
-            _ => panic!("Invalid strategy_bits: {}. Valid values: 8, 16, 32", game.strategy_bits()),
+            4 => normalized_strategy_compressed_u4_packed(
+                node.strategy_u4_packed(),
+                num_actions,
+                num_hands,
+            ),
+            _ => panic!(
+                "Invalid strategy_bits: {}. Valid values: 8, 16, 32",
+                game.strategy_bits()
+            ),
         };
 
         // node-locking
@@ -1175,7 +1238,11 @@ pub(crate) fn normalized_strategy_compressed_u8(strategy: &[u8], num_actions: us
     normalized
 }
 #[inline]
-pub(crate) fn normalized_strategy_compressed_u4_packed(strategy: &[u8], num_actions: usize, num_hands: usize) -> Vec<f32> {
+pub(crate) fn normalized_strategy_compressed_u4_packed(
+    strategy: &[u8],
+    num_actions: usize,
+    num_hands: usize,
+) -> Vec<f32> {
     let num_elements = num_actions * num_hands;
     let mut normalized = Vec::with_capacity(num_elements);
     for i in 0..num_elements {
@@ -1243,7 +1310,8 @@ mod tests {
         }
 
         // Expected final values
-        let expected: Vec<f32> = initial_strategy.iter()
+        let expected: Vec<f32> = initial_strategy
+            .iter()
             .zip(&small_update)
             .map(|(init, update)| init + update * NUM_TRIALS as f32)
             .collect();
@@ -1255,7 +1323,10 @@ mod tests {
             assert!(
                 error < 0.05,
                 "Action {}: accumulated={}, expected={}, error={}%",
-                i, accumulated[i], expected[i], error * 100.0
+                i,
+                accumulated[i],
+                expected[i],
+                error * 100.0
             );
         }
     }
@@ -1269,7 +1340,8 @@ mod tests {
         let scale = encode_unsigned_strategy_u8(&mut encoded, &original, 0);
 
         // Decode manually (since decode function exists but might not be used)
-        let decoded: Vec<f32> = encoded.iter()
+        let decoded: Vec<f32> = encoded
+            .iter()
             .map(|&x| (x as f32) * scale / 255.0)
             .collect();
 
@@ -1279,7 +1351,10 @@ mod tests {
             assert!(
                 error < 0.01,
                 "Index {}: decoded={}, original={}, error={}",
-                i, decoded[i], original[i], error
+                i,
+                decoded[i],
+                original[i],
+                error
             );
         }
     }
@@ -1298,7 +1373,10 @@ pub struct GameCheckpoint {
 
 #[cfg(feature = "bincode")]
 impl bincode::Encode for GameCheckpoint {
-    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
         self.game.encode(encoder)?;
         self.current_iteration.encode(encoder)?;
         self.exploitability.encode(encoder)?;
@@ -1308,7 +1386,9 @@ impl bincode::Encode for GameCheckpoint {
 
 #[cfg(feature = "bincode")]
 impl<C> bincode::Decode<C> for GameCheckpoint {
-    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         Ok(GameCheckpoint {
             game: PostFlopGame::decode(decoder)?,
             current_iteration: u32::decode(decoder)?,
@@ -1320,7 +1400,11 @@ impl<C> bincode::Decode<C> for GameCheckpoint {
 /// Saves a checkpoint of the game state to a file.
 /// This is the correct way to save a game in progress for later resumption.
 #[cfg(feature = "bincode")]
-pub fn save_checkpoint(game: &PostFlopGame, current_iteration: u32, path: &str) -> std::io::Result<()> {
+pub fn save_checkpoint(
+    game: &PostFlopGame,
+    current_iteration: u32,
+    path: &str,
+) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
 
@@ -1341,8 +1425,9 @@ pub fn save_checkpoint(game: &PostFlopGame, current_iteration: u32, path: &str) 
 pub fn load_checkpoint(path: &str) -> std::io::Result<GameCheckpoint> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    let checkpoint: GameCheckpoint = bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let checkpoint: GameCheckpoint =
+        bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     Ok(checkpoint)
 }
 
@@ -1350,7 +1435,10 @@ pub fn load_checkpoint(path: &str) -> std::io::Result<GameCheckpoint> {
 /// This function does not save iteration count and is unsuitable for resuming solving.
 /// Use `save_checkpoint()` instead for proper resumption support.
 #[cfg(feature = "bincode")]
-#[deprecated(since = "0.1.0", note = "Use save_checkpoint() instead for proper resumption")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use save_checkpoint() instead for proper resumption"
+)]
 pub fn save_gametree(game: &PostFlopGame, path: &str) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
@@ -1363,11 +1451,15 @@ pub fn save_gametree(game: &PostFlopGame, path: &str) -> std::io::Result<()> {
 /// This function does not restore iteration count and is unsuitable for resuming solving.
 /// Use `load_checkpoint()` instead for proper resumption support.
 #[cfg(feature = "bincode")]
-#[deprecated(since = "0.1.0", note = "Use load_checkpoint() instead for proper resumption")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use load_checkpoint() instead for proper resumption"
+)]
 pub fn load_gametree(path: &str) -> std::io::Result<PostFlopGame> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    let game: PostFlopGame = bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let game: PostFlopGame =
+        bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     Ok(game)
 }

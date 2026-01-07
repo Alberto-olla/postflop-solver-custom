@@ -46,7 +46,9 @@ fn print_help() {
     println!("  help            - Show this help");
     println!("  quit            - Exit explorer");
     println!();
-    println!("Note: When at a chance node (player = CHANCE), use 'play <n>' to deal a specific card.");
+    println!(
+        "Note: When at a chance node (player = CHANCE), use 'play <n>' to deal a specific card."
+    );
     println!();
 }
 
@@ -83,7 +85,8 @@ fn print_actions(game: &PostFlopGame) {
         println!("Cards that can be dealt:");
         for (i, action) in actions.iter().enumerate() {
             if let Action::Chance(card_idx) = action {
-                let card_name = card_to_string(*card_idx as u8).unwrap_or_else(|_| format!("Card({})", card_idx));
+                let card_name = card_to_string(*card_idx as u8)
+                    .unwrap_or_else(|_| format!("Card({})", card_idx));
                 println!("  [{}] {}", i, card_name);
             }
         }
@@ -145,8 +148,7 @@ fn print_strategy(game: &PostFlopGame) {
 
 fn reload_game(file_path: &str, history: &ActionHistory) -> PostFlopGame {
     let (mut game, _memo): (PostFlopGame, String) =
-        load_data_from_file(file_path, None)
-            .expect("Failed to load game file");
+        load_data_from_file(file_path, None).expect("Failed to load game file");
 
     game.cache_normalized_weights();
 
@@ -158,18 +160,15 @@ fn reload_game(file_path: &str, history: &ActionHistory) -> PostFlopGame {
 
 fn main() {
     // Get file path from command line
-    let file_path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| {
-            println!("Usage: explore <solved_game.bin>");
-            std::process::exit(1);
-        });
+    let file_path = std::env::args().nth(1).unwrap_or_else(|| {
+        println!("Usage: explore <solved_game.bin>");
+        std::process::exit(1);
+    });
 
     println!("Loading: {}", file_path);
 
     let (mut game, memo): (PostFlopGame, String) =
-        load_data_from_file(&file_path, None)
-            .expect("Failed to load game file");
+        load_data_from_file(&file_path, None).expect("Failed to load game file");
 
     game.cache_normalized_weights();
 
@@ -258,7 +257,8 @@ fn main() {
                 // Print action with card name if it's a chance action
                 match action {
                     Action::Chance(card_idx) => {
-                        let card_name = card_to_string(*card_idx as u8).unwrap_or_else(|_| format!("Card({})", card_idx));
+                        let card_name = card_to_string(*card_idx as u8)
+                            .unwrap_or_else(|_| format!("Card({})", card_idx));
                         println!("Dealt: {}", card_name);
                     }
                     _ => {

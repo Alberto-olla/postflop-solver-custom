@@ -520,7 +520,9 @@ fn leduc_4bit() {
 
     // Normalize per hand
     for hand in 0..num_hands {
-        let sum: f32 = (0..num_actions).map(|a| strategy[a * num_hands + hand]).sum();
+        let sum: f32 = (0..num_actions)
+            .map(|a| strategy[a * num_hands + hand])
+            .sum();
         if sum > 0.0 {
             for action in 0..num_actions {
                 strategy[action * num_hands + hand] /= sum;

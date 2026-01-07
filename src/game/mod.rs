@@ -1,6 +1,8 @@
+mod allocation;
 mod base;
 mod evaluation;
 mod interpreter;
+mod locking;
 mod node;
 
 #[cfg(feature = "bincode")]
@@ -28,7 +30,7 @@ enum State {
     TreeBuilt = 2,
     MemoryAllocated = 3,
     Solved = 4,
-    Finalized = 5,  // Solved + memory released (regrets freed)
+    Finalized = 5, // Solved + memory released (regrets freed)
 }
 
 /// A struct representing a postflop game.
@@ -85,19 +87,19 @@ pub struct PostFlopGame {
     target_storage_mode: BoardState,
     num_nodes: [u64; 3],
     // Granular precision control for each storage component
-    strategy_bits: u8,  // storage1: strategy precision (8, 16, or 32 bits)
-    regret_bits: u8,    // storage2/4: regret precision (16 or 32 bits)
-    ip_bits: u8,        // storage_ip: IP cfvalues precision (16 or 32 bits)
-    chance_bits: u8,    // storage_chance: chance cfvalues precision (8, 16, or 32 bits)
+    strategy_bits: u8, // storage1: strategy precision (8, 16, or 32 bits)
+    regret_bits: u8,   // storage2/4: regret precision (16 or 32 bits)
+    ip_bits: u8,       // storage_ip: IP cfvalues precision (16 or 32 bits)
+    chance_bits: u8,   // storage_chance: chance cfvalues precision (8, 16, or 32 bits)
     lazy_normalization_enabled: bool,
     lazy_normalization_freq: u32,
     // DEPRECATED/EXPERIMENTAL: Legacy features not in active use
     #[allow(dead_code)]
-    quantization_mode: QuantizationMode,  // DEPRECATED: Use *_bits parameters instead
+    quantization_mode: QuantizationMode, // DEPRECATED: Use *_bits parameters instead
     #[allow(dead_code)]
-    log_encoding_enabled: bool,  // EXPERIMENTAL: Logarithmic encoding (not in active use)
+    log_encoding_enabled: bool, // EXPERIMENTAL: Logarithmic encoding (not in active use)
     cfr_algorithm: crate::solver::CfrAlgorithm,
-    enable_pruning: bool,  // Dynamic regret-based pruning (branch skipping)
+    enable_pruning: bool, // Dynamic regret-based pruning (branch skipping)
     num_storage: u64,
     num_storage_ip: u64,
     num_storage_chance: u64,
@@ -148,9 +150,9 @@ pub struct PostFlopNode {
     num_children: u16,
     num_elements_ip: u16,
     num_elements: u32,
-    scale1: f32,  // strategy + cfvalue_chance
-    scale2: f32,  // regret + cfvalue + prev_regret (unified)
-    scale3: f32,  // cfvalue_ip
+    scale1: f32,       // strategy + cfvalue_chance
+    scale2: f32,       // regret + cfvalue + prev_regret (unified)
+    scale3: f32,       // cfvalue_ip
     storage1: *mut u8, // strategy
 
     storage2: *mut u8, // regrets or cfvalues

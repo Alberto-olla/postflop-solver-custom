@@ -105,13 +105,13 @@ pub trait Game: Send + Sync {
     /// Returns the strategy precision in bits (16, 8, or 4).
     #[doc(hidden)]
     fn strategy_bits(&self) -> u8 {
-        16  // Default: same as quantization mode
+        16 // Default: same as quantization mode
     }
 
     /// Returns the chance cfvalues precision in bits (16 or 8).
     #[doc(hidden)]
     fn chance_bits(&self) -> u8 {
-        16  // Default: same as quantization mode
+        16 // Default: same as quantization mode
     }
 
     /// Returns the regret precision in bits (32 or 16).
@@ -183,7 +183,12 @@ pub struct MemoryUsage {
 impl MemoryUsage {
     /// Returns the total memory usage in bytes.
     pub fn total(&self) -> u64 {
-        self.strategy + self.regrets + self.ip_cfvalues + self.chance_cfvalues + self.storage4 + self.misc
+        self.strategy
+            + self.regrets
+            + self.ip_cfvalues
+            + self.chance_cfvalues
+            + self.storage4
+            + self.misc
     }
 
     /// Returns the total memory usage in megabytes.
@@ -544,7 +549,7 @@ pub trait GameNode: Send + Sync {
     fn prev_regrets_mut(&mut self) -> &mut [f32] {
         unreachable!()
     }
-    
+
     /// Returns mutable references to both regrets and previous regrets (uncompressed).
     /// Used to avoid borrow checker issues when accessing both simultaneously.
     #[doc(hidden)]
@@ -563,14 +568,14 @@ pub trait GameNode: Send + Sync {
     fn prev_regrets_compressed_mut(&mut self) -> &mut [i16] {
         unreachable!()
     }
-    
+
     /// Returns mutable references to both regrets and previous regrets (compressed).
     /// Used to avoid borrow checker issues when accessing both simultaneously.
     #[doc(hidden)]
     fn regrets_and_prev_compressed_mut(&mut self) -> (&mut [i16], &mut [i16]) {
         unreachable!()
     }
-    
+
     /// Returns the 8-bit quantized previous instantaneous regrets.
     #[doc(hidden)]
     fn prev_regrets_i8(&self) -> &[i8] {

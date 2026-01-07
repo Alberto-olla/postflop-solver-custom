@@ -100,8 +100,11 @@ mod tests {
 
         for i in 1..100 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= prev_alpha,
-                "Alpha should increase monotonically (iteration {})", i);
+            assert!(
+                params.alpha_t >= prev_alpha,
+                "Alpha should increase monotonically (iteration {})",
+                i
+            );
             prev_alpha = params.alpha_t;
         }
     }
@@ -112,8 +115,11 @@ mod tests {
 
         for i in 0..10000 {
             let params = algo.compute_discounts(i);
-            assert!(params.alpha_t >= 0.0 && params.alpha_t < 1.0,
-                "Alpha should be in [0, 1) (iteration {})", i);
+            assert!(
+                params.alpha_t >= 0.0 && params.alpha_t < 1.0,
+                "Alpha should be in [0, 1) (iteration {})",
+                i
+            );
         }
     }
 }

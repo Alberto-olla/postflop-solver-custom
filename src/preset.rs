@@ -25,7 +25,7 @@ impl PresetSizing {
             ("turn", false) => self.turn_raise,
             ("river", true) => self.river_bet,
             ("river", false) => self.river_raise,
-            _ => self.river_bet,  // Default: river
+            _ => self.river_bet, // Default: river
         }
     }
 }
@@ -37,7 +37,9 @@ pub const FULL_PRESET: PresetSizing = PresetSizing {
     turn_bet: &[25, 50, 75, 100, 150, 200],
     turn_raise: &[53, 82, 89, 100, 103, 109, 114, 130, 150, 158, 167, 174, 324],
     river_bet: &[50, 75, 100, 150, 200, 300],
-    river_raise: &[86, 99, 115, 129, 152, 165, 181, 204, 239, 260, 311, 327, 411],
+    river_raise: &[
+        86, 99, 115, 129, 152, 165, 181, 204, 239, 260, 311, 327, 411,
+    ],
 };
 
 /// MEDIUM/STANDARD: azioni bilanciate, complessità crescente
@@ -60,7 +62,7 @@ pub fn apply_spr_logic(percentages: &[i32], pot: i32, stack: i32) -> String {
         .filter_map(|&pct| {
             let chips = (base as f64 * pct as f64 / 100.0).round() as i32;
             if chips >= stack {
-                None  // Se supera stack, salta
+                None // Se supera stack, salta
             } else {
                 Some(format!("{}c", chips))
             }
@@ -78,7 +80,13 @@ pub fn apply_spr_logic(percentages: &[i32], pot: i32, stack: i32) -> String {
 
 /// Espande i preset di bet sizing in stringhe effettive
 /// TUTTI i preset usano logica SPR (calcolo su min(pot, stack))
-pub fn expand_bet_size_preset(input: &str, is_bet: bool, pot: i32, stack: i32, street: &str) -> String {
+pub fn expand_bet_size_preset(
+    input: &str,
+    is_bet: bool,
+    pot: i32,
+    stack: i32,
+    street: &str,
+) -> String {
     let normalized = input.trim().to_uppercase();
 
     let preset = match normalized.as_str() {
@@ -110,8 +118,14 @@ pub fn parse_bet_sizes_with_preset(
     // Se entrambi i campi sono vuoti, ritorna sizing vuote
     if oop_bet.is_empty() && ip_bet.is_empty() {
         return Ok([
-            BetSizeOptions { bet: Vec::new(), raise: Vec::new() },
-            BetSizeOptions { bet: Vec::new(), raise: Vec::new() },
+            BetSizeOptions {
+                bet: Vec::new(),
+                raise: Vec::new(),
+            },
+            BetSizeOptions {
+                bet: Vec::new(),
+                raise: Vec::new(),
+            },
         ]);
     }
 
@@ -123,15 +137,9 @@ pub fn parse_bet_sizes_with_preset(
     let ip_bet_expanded = expand_bet_size_preset(ip_bet, true, pot, stack, street_name);
     let ip_raise_expanded = expand_bet_size_preset(ip_raise, false, pot, stack, street_name);
 
-    let oop = BetSizeOptions::try_from((
-        oop_bet_expanded.as_str(),
-        oop_raise_expanded.as_str(),
-    ))?;
+    let oop = BetSizeOptions::try_from((oop_bet_expanded.as_str(), oop_raise_expanded.as_str()))?;
 
-    let ip = BetSizeOptions::try_from((
-        ip_bet_expanded.as_str(),
-        ip_raise_expanded.as_str(),
-    ))?;
+    let ip = BetSizeOptions::try_from((ip_bet_expanded.as_str(), ip_raise_expanded.as_str()))?;
 
     Ok([oop, ip])
 }

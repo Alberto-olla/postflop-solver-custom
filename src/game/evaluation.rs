@@ -277,7 +277,8 @@ impl PostFlopGame {
             };
 
             let indices = if node.get_river() != NOT_DEALT {
-                &self.bunching_num_river[player][card_pair_to_index(node.get_turn(), node.get_river())]
+                &self.bunching_num_river[player]
+                    [card_pair_to_index(node.get_turn(), node.get_river())]
             } else if node.get_turn() != NOT_DEALT {
                 &self.bunching_num_turn[player][node.get_turn() as usize]
             } else {
