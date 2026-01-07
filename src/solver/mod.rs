@@ -6,7 +6,7 @@ use crate::interface::*;
 use crate::mutex_like::*;
 use crate::sliceop::*;
 use crate::utility::*;
-use pruning::*;
+use pruning::{compute_pruning_threshold, should_prune_action_average, should_prune_action_max};
 use regrets::update_regrets;
 use std::io::{self, Write};
 use std::mem::MaybeUninit;
@@ -22,6 +22,17 @@ use crate::alloc::*;
 use crate::cfr_algorithms::{CfrAlgorithmTrait, DcfrAlgorithm, DcfrPlusAlgorithm};
 // Import algoritmi sperimentali (richiedono import esplicito)
 use crate::cfr_algorithms::experimental::{PdcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PruningMode {
+    /// No pruning - process all branches
+    #[default]
+    Disabled,
+    /// Legacy: Average-based pruning (can cut off strong hands in polarized ranges)
+    Average,
+    /// Recommended: MAX-based pruning with integer threshold optimization
+    Max,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfrAlgorithm {
@@ -307,7 +318,8 @@ fn solve_recursive<T: Game>(
     else if node.player() == player {
         // compute the counterfactual values of each action
         // Use manual iteration to support pruning (branch skipping)
-        if game.enable_pruning() {
+        let pruning_mode = game.pruning_mode();
+        if pruning_mode != PruningMode::Disabled {
             // Pruning enabled: check each action before recursing
             let pruning_threshold = compute_pruning_threshold(
                 game.tree_config().effective_stack,
@@ -316,8 +328,15 @@ fn solve_recursive<T: Game>(
 
             for action in node.action_indices() {
                 // Check if this action should be skipped (pruned)
-                let should_skip =
-                    should_prune_action(game, node, action, num_hands, pruning_threshold);
+                let should_skip = match pruning_mode {
+                    PruningMode::Max => {
+                        should_prune_action_max(game, node, action, num_hands, pruning_threshold)
+                    }
+                    PruningMode::Average => {
+                        should_prune_action_average(game, node, action, num_hands, pruning_threshold)
+                    }
+                    PruningMode::Disabled => unreachable!(),
+                };
 
                 if should_skip {
                     // Skip this branch - fill with zeros

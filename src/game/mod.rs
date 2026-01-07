@@ -99,7 +99,7 @@ pub struct PostFlopGame {
     #[allow(dead_code)]
     log_encoding_enabled: bool, // EXPERIMENTAL: Logarithmic encoding (not in active use)
     cfr_algorithm: crate::solver::CfrAlgorithm,
-    enable_pruning: bool, // Dynamic regret-based pruning (branch skipping)
+    pruning_mode: crate::solver::PruningMode, // Regret-based pruning mode
     num_storage: u64,
     num_storage_ip: u64,
     num_storage_chance: u64,

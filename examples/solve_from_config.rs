@@ -1,3 +1,22 @@
+// Global allocator selection (mutually exclusive - mimalloc takes priority)
+#[cfg(feature = "mimalloc")]
+use mimalloc::MiMalloc;
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
+#[cfg(all(feature = "jemalloc", not(feature = "mimalloc")))]
+use tikv_jemallocator::Jemalloc;
+#[cfg(all(feature = "jemalloc", not(feature = "mimalloc")))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(all(feature = "tcmalloc", not(feature = "mimalloc"), not(feature = "jemalloc")))]
+use tcmalloc::TCMalloc;
+#[cfg(all(feature = "tcmalloc", not(feature = "mimalloc"), not(feature = "jemalloc")))]
+#[global_allocator]
+static GLOBAL: TCMalloc = TCMalloc;
+
 use postflop_solver::*;
 use serde::Deserialize;
 use std::fs;
@@ -127,9 +146,12 @@ struct SolverSettings {
     /// This feature is particularly effective with DCFR (beta=0.5), as negative regrets
     /// decay towards -infinity, making pruning safe and effective.
     ///
-    /// Default: false (disabled for backward compatibility)
-    #[serde(default = "default_enable_pruning")]
-    enable_pruning: bool,
+    /// Options: "disabled", "average" (legacy), "max" (recommended)
+    /// Also accepts: true (= "max"), false (= "disabled") for backward compatibility
+    ///
+    /// Default: "disabled" (for backward compatibility)
+    #[serde(default = "default_pruning_mode")]
+    pruning_mode: toml::Value,
 
     /// Enable warm-start: solve minimal tree first, then use as initialization
     ///
@@ -214,6 +236,31 @@ impl SolverSettings {
             )),
         }
     }
+
+    /// Get the pruning mode.
+    /// Supports both string values ("disabled", "average", "max") and legacy boolean (true/false).
+    fn get_pruning_mode(&self) -> Result<postflop_solver::PruningMode, String> {
+        match &self.pruning_mode {
+            toml::Value::Boolean(b) => {
+                // Legacy: true = max, false = disabled
+                if *b {
+                    Ok(postflop_solver::PruningMode::Max)
+                } else {
+                    Ok(postflop_solver::PruningMode::Disabled)
+                }
+            }
+            toml::Value::String(s) => match s.to_lowercase().as_str() {
+                "disabled" | "off" | "none" => Ok(postflop_solver::PruningMode::Disabled),
+                "average" | "avg" | "legacy" => Ok(postflop_solver::PruningMode::Average),
+                "max" | "maximum" => Ok(postflop_solver::PruningMode::Max),
+                _ => Err(format!(
+                    "Invalid pruning_mode: '{}'. Valid options: disabled, average, max",
+                    s
+                )),
+            },
+            _ => Err("pruning_mode must be a boolean or string".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,8 +297,8 @@ fn default_chance_bits() -> u8 {
 fn default_algorithm() -> String {
     "dcfr".to_string()
 } // Default: DCFR for backward compatibility
-fn default_enable_pruning() -> bool {
-    false
+fn default_pruning_mode() -> toml::Value {
+    toml::Value::String("disabled".to_string())
 } // Default: disabled for backward compatibility
 fn default_use_warmstart() -> bool {
     false
@@ -329,7 +376,8 @@ fn configure_game(game: &mut PostFlopGame, config: &SolverSettings) -> Result<()
     game.set_cfr_algorithm(algorithm);
 
     // Configure pruning
-    game.set_enable_pruning(config.enable_pruning);
+    let pruning_mode = config.get_pruning_mode()?;
+    game.set_pruning_mode(pruning_mode);
 
     // Configure precision
     game.set_strategy_bits(config.strategy_bits);
@@ -679,14 +727,20 @@ fn main() {
         );
     }
 
-    if config.solver.enable_pruning {
+    let pruning_mode = config.solver.get_pruning_mode().unwrap_or(postflop_solver::PruningMode::Disabled);
+    if pruning_mode != postflop_solver::PruningMode::Disabled {
         if algorithm != postflop_solver::CfrAlgorithm::DCFR {
             eprintln!("⚠️  Warning: Pruning is only effective with DCFR algorithm (beta=0.5).");
             eprintln!(
                 "            Other algorithms clip negative regrets, making pruning ineffective."
             );
         }
-        println!("Regret-based pruning: ENABLED (dynamic threshold)");
+        let mode_str = match pruning_mode {
+            postflop_solver::PruningMode::Max => "MAX (recommended)",
+            postflop_solver::PruningMode::Average => "AVERAGE (legacy)",
+            postflop_solver::PruningMode::Disabled => unreachable!(),
+        };
+        println!("Regret-based pruning: ENABLED - {} mode", mode_str);
     }
 
     println!("\nMemory precision configuration (estimated):");

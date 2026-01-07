@@ -135,10 +135,10 @@ pub trait Game: Send + Sync {
         crate::solver::CfrAlgorithm::DCFR
     }
 
-    /// Returns whether regret-based pruning is enabled.
+    /// Returns the pruning mode for regret-based branch skipping.
     #[doc(hidden)]
-    fn enable_pruning(&self) -> bool {
-        false
+    fn pruning_mode(&self) -> crate::solver::PruningMode {
+        crate::solver::PruningMode::Disabled
     }
 
     /// Returns the tree configuration (for pruning Delta calculation).

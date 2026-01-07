@@ -157,8 +157,8 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
-    fn enable_pruning(&self) -> bool {
-        self.enable_pruning
+    fn pruning_mode(&self) -> crate::solver::PruningMode {
+        self.pruning_mode
     }
 
     #[inline]
@@ -228,7 +228,7 @@ impl Default for PostFlopGame {
             quantization_mode: QuantizationMode::default(), // DEPRECATED
             log_encoding_enabled: bool::default(),          // EXPERIMENTAL
             cfr_algorithm: crate::solver::CfrAlgorithm::default(),
-            enable_pruning: false,
+            pruning_mode: crate::solver::PruningMode::default(),
             num_storage: u64::default(),
             num_storage_ip: u64::default(),
             num_storage_chance: u64::default(),
@@ -631,25 +631,27 @@ impl PostFlopGame {
         self.cfr_algorithm
     }
 
-    /// Enables or disables dynamic regret-based pruning (branch skipping).
+    /// Sets the pruning mode for regret-based branch skipping.
+    ///
+    /// Pruning modes:
+    /// - `Disabled`: No pruning, process all branches (default)
+    /// - `Average`: Legacy average-based pruning (may cut strong hands in polarized ranges)
+    /// - `Max`: Recommended MAX-based pruning with integer threshold optimization
     ///
     /// When enabled, actions with sufficiently negative regret are temporarily skipped
     /// to reduce computational requirements. The pruning threshold is dynamically
     /// calculated based on the maximum payoff range and current iteration.
     ///
-    /// This feature is particularly effective with DCFR (beta=0.5), as negative regrets
-    /// decay towards -infinity, making pruning safe and effective.
-    ///
     /// Can be called at any time (no memory allocation constraint).
     #[inline]
-    pub fn set_enable_pruning(&mut self, enabled: bool) {
-        self.enable_pruning = enabled;
+    pub fn set_pruning_mode(&mut self, mode: crate::solver::PruningMode) {
+        self.pruning_mode = mode;
     }
 
-    /// Gets whether pruning is enabled.
+    /// Gets the current pruning mode.
     #[inline]
-    pub fn enable_pruning(&self) -> bool {
-        self.enable_pruning
+    pub fn pruning_mode(&self) -> crate::solver::PruningMode {
+        self.pruning_mode
     }
 
     /// Returns the current memory usage in megabytes.

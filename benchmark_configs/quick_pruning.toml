@@ -1,0 +1,57 @@
+# ============================================================================
+# BENCHMARK CONFIG - QUICK (small IP range) - WITH PRUNING (MAX-based)
+# ============================================================================
+# For fast iteration testing (~seconds)
+# ============================================================================
+
+[ranges]
+oop = "AhQh"
+ip = "AJs:0.00,QTs:0.00,QTo:0.01,Q9o:0.00,Q7o:0.00,Q6s:0.00,Q6o:0.01,Q5o:0.01,Q5s:0.00,Q3o:0.00,Q2s:0.00,JTo:0.00,J9o:0.00,J9s:0.00,J8s:0.00,TT:0.00,T9o:0.00,T9s:0.00,T8s:0.00,T8o:0.00,T7o:0.02,T7s:0.00,T6o:0.01,T6s:0.00,T5o:0.00,T4o:0.00,T4s:0.00,T3s:0.00,98o:0.00,98s:0.00,97o:0.00,97s:0.00,96o:0.00,95o:0.00,95s:0.00,94s:0.00,94o:0.00,93s:0.01,93o:0.00,92o:0.00,88:0.00,87o:0.00,87s:0.00,86o:0.00,86s:0.00,85o:0.00,84o:0.00,83o:0.00,83s:0.00,82o:0.00,77:0.00,76o:0.00,75o:0.00,74s:0.00,74o:0.00,73o:0.00,73s:0.00,72o:0.00,72s:0.00,66:0.00,65s:0.00,64o:0.00,63o:0.00,62o:0.00,62s:0.00,55:0.00,54s:0.00,54o:0.00,53o:0.00,52s:0.00,52o:0.00,43o:0.00,42s:0.00,42o:0.00,33:0.00,32s:0.00,32o:0.01,22:0.01"
+
+[cards]
+flop = "7h6d6h"
+turn = "5s"
+river = ""
+
+[tree]
+starting_pot = 3900
+effective_stack = 17600
+rake_rate = 0.0
+rake_cap = 0.0
+add_allin_threshold = 1.5
+force_allin_threshold = 0.15
+merging_threshold = 0.1
+
+[bet_sizes.flop]
+oop_bet = "900c"
+oop_raise = ""
+ip_bet = ""
+ip_raise = "900c"
+
+[bet_sizes.turn]
+oop_bet = "full"
+oop_raise = "full"
+ip_bet = "full"
+ip_raise = "full"
+
+[bet_sizes.river]
+oop_bet = "full"
+oop_raise = "medium"
+ip_bet = "full"
+ip_raise = "medium"
+
+[solver]
+max_iterations = 500
+target_exploitability_pct = 0.5
+strategy_bits = 32
+regret_bits = 32
+ip_bits = 32
+chance_bits = 32
+algorithm = "dcfr"
+pruning_mode = "max"
+lazy_normalization = false
+zstd_compression_level = 0
+dry_run = false
+
+[output]
+directory = "benchmark_results"

@@ -1,0 +1,57 @@
+# ============================================================================
+# BENCHMARK CONFIG - FULL (wide IP range) - WITH PRUNING (MAX-based)
+# ============================================================================
+# For comprehensive testing (~minutes)
+# ============================================================================
+
+[ranges]
+oop = "AhQh"
+ip = "22+,A2+,K2+,Q2+,J2+,T2+,92+,82+,72+,62+,52+,42+,32"
+
+[cards]
+flop = "7h6d6h"
+turn = "5s"
+river = ""
+
+[tree]
+starting_pot = 3900
+effective_stack = 17600
+rake_rate = 0.0
+rake_cap = 0.0
+add_allin_threshold = 1.5
+force_allin_threshold = 0.15
+merging_threshold = 0.1
+
+[bet_sizes.flop]
+oop_bet = "900c"
+oop_raise = ""
+ip_bet = ""
+ip_raise = "900c"
+
+[bet_sizes.turn]
+oop_bet = "full"
+oop_raise = "full"
+ip_bet = "full"
+ip_raise = "full"
+
+[bet_sizes.river]
+oop_bet = "full"
+oop_raise = "medium"
+ip_bet = "full"
+ip_raise = "medium"
+
+[solver]
+max_iterations = 500
+target_exploitability_pct = 0.5
+strategy_bits = 32
+regret_bits = 32
+ip_bits = 32
+chance_bits = 32
+algorithm = "dcfr"
+pruning_mode = "average"
+lazy_normalization = false
+zstd_compression_level = 0
+dry_run = false
+
+[output]
+directory = "benchmark_results"

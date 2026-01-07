@@ -93,3 +93,33 @@ This program is free software: you can redistribute it and/or modify it under th
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+
+# Build tutti gli allocator
+cargo build --release --example solve_from_config && \
+cp target/release/examples/solve_from_config target/release/examples/solve_default && \
+cargo build --release --example solve_from_config --features mimalloc && \
+cp target/release/examples/solve_from_config target/release/examples/solve_mimalloc && \
+cargo build --release --example solve_from_config --features jemalloc && \
+cp target/release/examples/solve_from_config target/release/examples/solve_jemalloc && \
+LIBRARY_PATH=/opt/homebrew/lib cargo build --release --example solve_from_config --features tcmalloc && \
+cp target/release/examples/solve_from_config target/release/examples/solve_tcmalloc && \
+cargo +nightly build --release --example solve_from_config --features custom-alloc && \
+cp target/release/examples/solve_from_config target/release/examples/solve_custom_alloc
+
+# Quick benchmark (tutti e 5)
+CONFIG="benchmark_configs/quick_no_pruning.toml" && \
+echo "=== DEFAULT ===" && hyperfine --runs 10 --warmup 1 "./target/release/examples/solve_default $CONFIG" && \
+echo "=== MIMALLOC ===" && hyperfine --runs 10 --warmup 1 "./target/release/examples/solve_mimalloc $CONFIG" && \
+echo "=== JEMALLOC ===" && hyperfine --runs 10 --warmup 1 "./target/release/examples/solve_jemalloc $CONFIG" && \
+echo "=== TCMALLOC ===" && hyperfine --runs 10 --warmup 1 "./target/release/examples/solve_tcmalloc $CONFIG" && \
+echo "=== CUSTOM-ALLOC ===" && hyperfine --runs 10 --warmup 1 "./target/release/examples/solve_custom_alloc $CONFIG"
+
+# Full benchmark (tutti e 5)
+CONFIG="benchmark_configs/full_no_pruning.toml" && \
+echo "=== DEFAULT ===" && hyperfine --runs 5 --warmup 1 "./target/release/examples/solve_default $CONFIG" && \
+echo "=== MIMALLOC ===" && hyperfine --runs 5 --warmup 1 "./target/release/examples/solve_mimalloc $CONFIG" && \
+echo "=== JEMALLOC ===" && hyperfine --runs 5 --warmup 1 "./target/release/examples/solve_jemalloc $CONFIG" && \
+echo "=== TCMALLOC ===" && hyperfine --runs 5 --warmup 1 "./target/release/examples/solve_tcmalloc $CONFIG" && \
+echo "=== CUSTOM-ALLOC ===" && hyperfine --runs 5 --warmup 1 "./target/release/examples/solve_custom_alloc $CONFIG"
