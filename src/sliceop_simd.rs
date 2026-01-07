@@ -1,8 +1,6 @@
 // SIMD optimizations for slice operations using AVX2
 // Optimization #3 from MULTITHREADING_OPTIMIZATION_STUDY.md
 
-use std::mem::MaybeUninit;
-
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -151,36 +149,4 @@ pub(crate) unsafe fn fma_slices_uninit_avx2<'a>(
         });
 
     dst
-}
-
-// Runtime detection of AVX2 support (cached for performance)
-use std::sync::atomic::{AtomicU8, Ordering};
-
-static AVX2_AVAILABLE: AtomicU8 = AtomicU8::new(2); // 0=no, 1=yes, 2=unknown
-
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-pub(crate) fn has_avx2() -> bool {
-    let cached = AVX2_AVAILABLE.load(Ordering::Relaxed);
-    if cached != 2 {
-        return cached == 1;
-    }
-
-    #[cfg(target_feature = "avx2")]
-    {
-        AVX2_AVAILABLE.store(1, Ordering::Relaxed);
-        true
-    }
-    #[cfg(not(target_feature = "avx2"))]
-    {
-        let available = is_x86_feature_detected!("avx2");
-        AVX2_AVAILABLE.store(if available { 1 } else { 0 }, Ordering::Relaxed);
-        available
-    }
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-pub(crate) fn has_avx2() -> bool {
-    false
 }

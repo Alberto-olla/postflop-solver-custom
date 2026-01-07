@@ -33,7 +33,7 @@ fn main() {
 
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     let max_num_iterations = 1000;
     let target_exploitability = game.tree_config().starting_pot as f32 * 0.005;

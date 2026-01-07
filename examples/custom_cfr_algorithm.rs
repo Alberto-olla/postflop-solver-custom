@@ -76,7 +76,8 @@ fn main() {
     println!("\n=== Confronto con altri algoritmi ===\n");
 
     // Importa algoritmi standard per confronto
-    use postflop_solver::cfr_algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm, SapcfrPlusAlgorithm};
+    use postflop_solver::cfr_algorithms::experimental::SapcfrPlusAlgorithm;
+    use postflop_solver::cfr_algorithms::{DcfrAlgorithm, DcfrPlusAlgorithm};
 
     let algorithms: Vec<(&str, Box<dyn CfrAlgorithmTrait>)> = vec![
         ("Linear CFR", Box::new(LinearCfrAlgorithm)),

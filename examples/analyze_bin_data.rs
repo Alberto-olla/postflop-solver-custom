@@ -23,7 +23,7 @@ fn main() {
                 "Estimated memory usage: {:.2} MB",
                 game.estimated_memory_usage() as f64 / 1_048_576.0
             );
-            let (mem_uncompressed, mem_compressed) = game.memory_usage();
+            let (mem_uncompressed, mem_compressed, _) = game.memory_usage();
             println!(
                 "Current memory usage: {:.2} MB (uncompressed), {:.2} MB (compressed)",
                 mem_uncompressed as f64 / 1_048_576.0,

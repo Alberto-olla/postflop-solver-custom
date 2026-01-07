@@ -23,7 +23,7 @@ fn normal_node_locking() {
 
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     // node locking must be performed after allocating memory and before solving
     game.play(1); // OOP all-in
@@ -40,7 +40,7 @@ fn normal_node_locking() {
     assert!((strategy_oop[2] - 0.0).abs() < 1e-3); // QQ never all-in
     assert!((strategy_oop[3] - 1.0).abs() < 1e-3); // AA always all-in
 
-    game.allocate_memory(false);
+    game.allocate_memory();
     game.play(1);
     game.lock_current_strategy(&[0.5, 0.5]); // lock IP's strategy: 50% fold, 50% call
     game.back_to_root();
@@ -74,7 +74,7 @@ fn partial_node_locking() {
 
     let action_tree = ActionTree::new(tree_config).unwrap();
     let mut game = PostFlopGame::with_config(card_config, action_tree).unwrap();
-    game.allocate_memory(false);
+    game.allocate_memory();
 
     // lock OOP's strategy: only JJ is locked and the rest is not
     game.lock_current_strategy(&[0.8, 0.0, 0.0, 0.2, 0.0, 0.0]); // JJ: 80% check, 20% all-in

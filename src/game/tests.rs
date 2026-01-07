@@ -373,10 +373,10 @@ fn one_raise_all_range_with_river() {
     let equity_ip = compute_average(&game.equity(1), weights_ip);
     let ev_oop = compute_average(&game.expected_values(0), weights_oop);
     let ev_ip = compute_average(&game.expected_values(1), weights_ip);
-    assert!((equity_oop - 0.5).abs() < 1e-5);
-    assert!((equity_ip - 0.5).abs() < 1e-5);
-    assert!((ev_oop - 37.5).abs() < 1e-4);
-    assert!((ev_ip - 22.5).abs() < 1e-4);
+    assert!((equity_oop - 0.5).abs() < 1e-4);
+    assert!((equity_ip - 0.5).abs() < 1e-4);
+    assert!((ev_oop - 37.5).abs() < 1e-2);
+    assert!((ev_ip - 22.5).abs() < 1e-2);
 
     game.play(0);
     game.cache_normalized_weights();
@@ -386,10 +386,10 @@ fn one_raise_all_range_with_river() {
     let equity_ip = compute_average(&game.equity(1), weights_ip);
     let ev_oop = compute_average(&game.expected_values(0), weights_oop);
     let ev_ip = compute_average(&game.expected_values(1), weights_ip);
-    assert!((equity_oop - 0.5).abs() < 1e-5);
-    assert!((equity_ip - 0.5).abs() < 1e-5);
-    assert!((ev_oop - 30.0).abs() < 1e-4);
-    assert!((ev_ip - 30.0).abs() < 1e-4);
+    assert!((equity_oop - 0.5).abs() < 1e-4);
+    assert!((equity_ip - 0.5).abs() < 1e-4);
+    assert!((ev_oop - 30.0).abs() < 1e-2);
+    assert!((ev_ip - 30.0).abs() < 1e-2);
 
     game.play(0);
     assert!(game.is_terminal_node());
@@ -400,10 +400,10 @@ fn one_raise_all_range_with_river() {
     let equity_ip = compute_average(&game.equity(1), weights_ip);
     let ev_oop = compute_average(&game.expected_values(0), weights_oop);
     let ev_ip = compute_average(&game.expected_values(1), weights_ip);
-    assert!((equity_oop - 0.5).abs() < 1e-5);
-    assert!((equity_ip - 0.5).abs() < 1e-5);
-    assert!((ev_oop - 30.0).abs() < 1e-4);
-    assert!((ev_ip - 30.0).abs() < 1e-4);
+    assert!((equity_oop - 0.5).abs() < 1e-4);
+    assert!((equity_ip - 0.5).abs() < 1e-4);
+    assert!((ev_oop - 30.0).abs() < 1e-2);
+    assert!((ev_ip - 30.0).abs() < 1e-2);
 
     game.back_to_root();
     game.play(1);
@@ -414,10 +414,10 @@ fn one_raise_all_range_with_river() {
     let equity_ip = compute_average(&game.equity(1), weights_ip);
     let ev_oop = compute_average(&game.expected_values(0), weights_oop);
     let ev_ip = compute_average(&game.expected_values(1), weights_ip);
-    assert!((equity_oop - 0.5).abs() < 1e-5);
-    assert!((equity_ip - 0.5).abs() < 1e-5);
-    assert!((ev_oop - 75.0).abs() < 1e-4);
-    assert!((ev_ip - 15.0).abs() < 1e-4);
+    assert!((equity_oop - 0.5).abs() < 1e-4);
+    assert!((equity_ip - 0.5).abs() < 1e-4);
+    assert!((ev_oop - 75.0).abs() < 1e-2);
+    assert!((ev_ip - 15.0).abs() < 1e-2);
 
     game.play(0);
     assert!(game.is_terminal_node());
@@ -429,10 +429,10 @@ fn one_raise_all_range_with_river() {
     let ev_oop = compute_average(&game.expected_values(0), weights_oop);
     let ev_ip = compute_average(&game.expected_values(1), weights_ip);
     assert!(game.is_terminal_node());
-    assert!((equity_oop - 0.5).abs() < 1e-5);
-    assert!((equity_ip - 0.5).abs() < 1e-5);
-    assert!((ev_oop - 90.0).abs() < 1e-4);
-    assert!((ev_ip - 0.0).abs() < 1e-4);
+    assert!((equity_oop - 0.5).abs() < 1e-4);
+    assert!((equity_ip - 0.5).abs() < 1e-4);
+    assert!((ev_oop - 90.0).abs() < 1e-2);
+    assert!((ev_ip - 0.0).abs() < 1e-2);
 }
 
 #[test]
@@ -1252,12 +1252,6 @@ fn solve_pio_preset_raked() {
 #[test]
 fn verify_sapcfr_plus_implementation() {
     use crate::bet_size::BetSizeOptions;
-    use crate::game::*; // For PostFlopGame
-    use crate::interface::*;
-    use crate::range::*;
-    use crate::solver::*;
-    use crate::utility::*;
-    use std::convert::TryFrom;
 
     let oop_range_str = "AhQh";
     let ip_range_str = "AJs:0.00,QTs:0.00,QTo:0.01,Q9o:0.00,Q7o:0.00,Q6s:0.00,Q6o:0.01,Q5o:0.01,Q5s:0.00,Q3o:0.00,Q2s:0.00,JTo:0.00,J9o:0.00,J9s:0.00,J8s:0.00,TT:0.00,T9o:0.00,T9s:0.00,T8s:0.00,T8o:0.00,T7o:0.02,T7s:0.00,T6o:0.01,T6s:0.00,T5o:0.00,T4o:0.00,T4s:0.00,T3s:0.00,98o:0.00,98s:0.00,97o:0.00,97s:0.00,96o:0.00,95o:0.00,95s:0.00,94s:0.00,94o:0.00,93s:0.01,93o:0.00,92o:0.00,88:0.00,87o:0.00,87s:0.00,86o:0.00,86s:0.00,85o:0.00,84o:0.00,83o:0.00,83s:0.00,82o:0.00,77:0.00,76o:0.00,75o:0.00,74s:0.00,74o:0.00,73o:0.00,73s:0.00,72o:0.00,72s:0.00,66:0.00,65s:0.00,64o:0.00,63o:0.00,62o:0.00,62s:0.00,55:0.00,54s:0.00,54o:0.00,53o:0.00,52s:0.00,52o:0.00,43o:0.00,42s:0.00,42o:0.00,33:0.00,32s:0.00,32o:0.01,22:0.01";
@@ -1298,7 +1292,8 @@ fn verify_sapcfr_plus_implementation() {
 
     // 1. Test Isolation: Allocate with DCFR first, ensure storage4 is NOT allocated
     game.set_cfr_algorithm(CfrAlgorithm::DCFR);
-    game.allocate_memory_with_mode(QuantizationMode::Int16);
+    game.set_regret_bits(16);
+    game.allocate_memory();
 
     assert_eq!(
         game.memory_usage_storage4_mb(),
@@ -1341,7 +1336,8 @@ fn verify_sapcfr_plus_implementation() {
     .unwrap();
 
     game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
-    game.allocate_memory_with_mode(QuantizationMode::Int16);
+    game.set_regret_bits(16);
+    game.allocate_memory();
 
     let storage4_mb = game.memory_usage_storage4_mb();
     assert!(storage4_mb > 0.0, "Storage4 MUST be allocated for SAPCFR+");

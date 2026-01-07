@@ -48,7 +48,7 @@ fn main() {
     );
 
     // check memory usage
-    let (mem_usage, mem_usage_compressed) = game.memory_usage();
+    let (mem_usage, mem_usage_compressed, _) = game.memory_usage();
     println!(
         "Memory usage without compression (32-bit float): {:.2}GB",
         mem_usage as f64 / (1024.0 * 1024.0 * 1024.0)
@@ -58,11 +58,8 @@ fn main() {
         mem_usage_compressed as f64 / (1024.0 * 1024.0 * 1024.0)
     );
 
-    // allocate memory without compression (use 32-bit float)
-    game.allocate_memory(false);
-
-    // allocate memory with compression (use 16-bit integer)
-    // game.allocate_memory(true);
+    // allocate memory (uses regret_bits/strategy_bits settings)
+    game.allocate_memory();
 
     // solve the game
     let max_num_iterations = 1000;

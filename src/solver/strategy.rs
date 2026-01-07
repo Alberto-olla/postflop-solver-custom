@@ -243,7 +243,8 @@ pub(super) fn compute_strategy<T: Game>(
 }
 
 /// Updates cumulative strategy with discounting (32-bit mode)
-pub(super) fn update_cumulative_strategy_f32(
+#[allow(dead_code)]
+fn _update_cumulative_strategy_f32(
     cum_strategy: &mut [f32],
     current_strategy: &[f32],
     locking: &[f32],
@@ -252,7 +253,7 @@ pub(super) fn update_cumulative_strategy_f32(
     current_strategy
         .iter()
         .zip(&*cum_strategy)
-        .for_each(|(x, y)| {
+        .for_each(|(_x, y)| {
             // Apply discount to existing cumulative
             let discounted = *y * gamma_t;
             // Strategy is updated by adding current to discounted cumulative
@@ -278,7 +279,8 @@ pub(super) fn update_cumulative_strategy_f32(
 }
 
 /// Updates cumulative strategy with discounting (16-bit compressed mode)
-pub(super) fn update_cumulative_strategy_u16(
+#[allow(dead_code)]
+fn _update_cumulative_strategy_u16(
     cum_strategy: &mut [u16],
     current_strategy: &mut [f32],
     locking: &[f32],
@@ -311,7 +313,8 @@ pub(super) fn update_cumulative_strategy_u16(
 }
 
 /// Updates cumulative strategy with discounting (8-bit compressed mode)
-pub(super) fn update_cumulative_strategy_u8(
+#[allow(dead_code)]
+fn _update_cumulative_strategy_u8(
     cum_strategy: &mut [u8],
     current_strategy: &mut [f32],
     locking: &[f32],
