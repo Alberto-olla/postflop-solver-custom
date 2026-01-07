@@ -807,9 +807,9 @@ fn print_and_compare_configs(g1: &PostFlopGame, g2: &PostFlopGame, label1: &str,
         format!("{}", g2.chance_bits()),
     );
     check(
-        "Pruning Enabled",
-        format!("{}", g1.enable_pruning()),
-        format!("{}", g2.enable_pruning()),
+        "Pruning Mode",
+        format!("{:?}", g1.pruning_mode()),
+        format!("{:?}", g2.pruning_mode()),
     );
     check(
         "Lazy Norm Enabled",

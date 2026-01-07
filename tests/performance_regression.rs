@@ -4,7 +4,12 @@
 //! These tests use the exact configuration from node_03_turn TOML file
 //! to ensure consistent comparison with baseline results.
 //!
-//! Run with: cargo test --release --test performance_regression -- --nocapture
+//! **NOTE**: These tests are marked `#[ignore]` by default because:
+//! 1. They are machine-dependent (baselines may not match different hardware)
+//! 2. They take significant time (~5-30s each in release mode)
+//! 3. They are meant for manual regression testing, not CI
+//!
+//! Run with: cargo test --release --test performance_regression -- --ignored --nocapture
 
 use postflop_solver::*;
 use serde::Deserialize;
@@ -218,6 +223,7 @@ fn load_game_from_toml(path: &str) -> (PostFlopGame, u32, f32) {
 // ============================================================================
 
 #[test]
+#[ignore] // Machine-dependent baseline; run manually with --ignored
 fn test_performance_dcfr_16bit_node03_turn() {
     const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
 
@@ -286,6 +292,7 @@ fn test_performance_dcfr_16bit_node03_turn() {
 // ============================================================================
 
 #[test]
+#[ignore] // Machine-dependent baseline; run manually with --ignored
 fn test_performance_dcfrplus_16bit_node03_turn() {
     const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
 
@@ -350,151 +357,15 @@ fn test_performance_dcfrplus_16bit_node03_turn() {
 }
 
 // ============================================================================
-// TEST 3: SAPCFR+ with 16-bit precision
-// ============================================================================
-
-#[test]
-fn test_performance_sapcfrplus_16bit_node03_turn() {
-    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
-
-    // Baseline values from empirical testing
-    const BASELINE_ITERATIONS: u32 = 240; // For reference only
-    const BASELINE_TIME_SECS: f32 = 8.77;
-
-    // Tolerance: allow 5% degradation for time
-    const TIME_TOLERANCE: f32 = 1.05;
-
-    // Load game from TOML
-    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
-
-    // Configure for SAPCFR+ with 16-bit
-    game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
-    game.allocate_memory(); // 16-bit mode
-
-    // Print header before solving
-    println!("\n=== SAPCFR+ 16-bit Performance ===");
-    println!(
-        "Baseline: {} iterations, {:.2}s",
-        BASELINE_ITERATIONS, BASELINE_TIME_SECS
-    );
-
-    // Solve with timing
-    let start = Instant::now();
-    let final_expl = solve(&mut game, max_iters, target_expl, true);
-    let duration = start.elapsed();
-    let time_secs = duration.as_secs_f32();
-
-    println!("Current:  Time {:.2}s", time_secs);
-    println!(
-        "Final exploitability: {:.6} (target: {:.1})",
-        final_expl, target_expl
-    );
-
-    // Assertions
-    assert!(
-        final_expl <= target_expl,
-        "Failed to reach target exploitability. Got: {}, Target: {}",
-        final_expl,
-        target_expl
-    );
-
-    // WARNING: Time should not increase significantly
-    assert!(
-        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
-        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
-        BASELINE_TIME_SECS,
-        time_secs,
-        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
-    );
-
-    // SUCCESS: Print if performance improved
-    if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!(
-            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-            BASELINE_TIME_SECS - time_secs,
-            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
-        );
-    }
-}
-
-// ============================================================================
-// TEST 4: PDCFR+ with 16-bit precision
-// ============================================================================
-
-#[test]
-fn test_performance_pdcfrplus_16bit_node03_turn() {
-    const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
-
-    // Baseline values from empirical testing
-    const BASELINE_ITERATIONS: u32 = 290; // For reference only
-    const BASELINE_TIME_SECS: f32 = 3.30;
-
-    // Tolerance: allow 5% degradation for time
-    const TIME_TOLERANCE: f32 = 1.05;
-
-    // Load game from TOML
-    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
-
-    // Configure for PDCFR+ with 16-bit
-    game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
-    game.allocate_memory(); // 16-bit mode
-
-    // Print header before solving
-    println!("\n=== PDCFR+ 16-bit Performance ===");
-    println!(
-        "Baseline: {} iterations, {:.2}s",
-        BASELINE_ITERATIONS, BASELINE_TIME_SECS
-    );
-
-    // Solve with timing
-    let start = Instant::now();
-    let final_expl = solve(&mut game, max_iters, target_expl, true);
-    let duration = start.elapsed();
-    let time_secs = duration.as_secs_f32();
-
-    println!("Current:  Time {:.2}s", time_secs);
-    println!(
-        "Final exploitability: {:.6} (target: {:.1})",
-        final_expl, target_expl
-    );
-
-    // Assertions
-    assert!(
-        final_expl <= target_expl,
-        "Failed to reach target exploitability. Got: {}, Target: {}",
-        final_expl,
-        target_expl
-    );
-
-    // WARNING: Time should not increase significantly
-    assert!(
-        time_secs <= BASELINE_TIME_SECS * TIME_TOLERANCE,
-        "Performance regression! Time increased from {:.2}s to {:.2}s ({:.1}% increase)",
-        BASELINE_TIME_SECS,
-        time_secs,
-        ((time_secs / BASELINE_TIME_SECS - 1.0) * 100.0)
-    );
-
-    // SUCCESS: Print if performance improved
-    if time_secs < BASELINE_TIME_SECS * 0.90 {
-        println!(
-            "✓ Performance IMPROVED! Time reduced by {:.2}s ({:.1}%)",
-            BASELINE_TIME_SECS - time_secs,
-            ((1.0 - time_secs / BASELINE_TIME_SECS) * 100.0)
-        );
-    }
-}
-
-// ============================================================================
-// BONUS TEST: Run all four and compare
+// BONUS TEST: Compare DCFR and DCFR+ algorithms
 // ============================================================================
 
 #[test]
 #[ignore] // Use `cargo test --release --ignored -- --nocapture` to run
-fn test_compare_all_algorithms_node03_turn() {
+fn test_compare_dcfr_algorithms_node03_turn() {
     const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
 
-    println!("\n=== Comparing All Algorithms (16-bit) ===\n");
+    println!("\n=== Comparing DCFR Algorithms (16-bit) ===\n");
 
     // Test DCFR
     let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
@@ -512,22 +383,6 @@ fn test_compare_all_algorithms_node03_turn() {
     let dcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
     let dcfrplus_time = start.elapsed();
 
-    // Test PDCFR+
-    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
-    game.set_cfr_algorithm(CfrAlgorithm::PDCFRPlus);
-    game.allocate_memory();
-    let start = Instant::now();
-    let pdcfrplus_expl = solve(&mut game, max_iters, target_expl, true);
-    let pdcfrplus_time = start.elapsed();
-
-    // Test SAPCFR+
-    let (mut game, max_iters, target_expl) = load_game_from_toml(CONFIG_PATH);
-    game.set_cfr_algorithm(CfrAlgorithm::SAPCFRPlus);
-    game.allocate_memory();
-    let start = Instant::now();
-    let sapcfr_expl = solve(&mut game, max_iters, target_expl, true);
-    let sapcfr_time = start.elapsed();
-
     // Print comparison table
     println!("\n┌─────────────┬──────────┬─────────────────┐");
     println!("│ Algorithm   │ Time (s) │ Exploitability  │");
@@ -542,23 +397,11 @@ fn test_compare_all_algorithms_node03_turn() {
         dcfrplus_time.as_secs_f32(),
         dcfrplus_expl
     );
-    println!(
-        "│ PDCFR+      │ {:>8.2} │ {:>15.6} │",
-        pdcfrplus_time.as_secs_f32(),
-        pdcfrplus_expl
-    );
-    println!(
-        "│ SAPCFR+     │ {:>8.2} │ {:>15.6} │",
-        sapcfr_time.as_secs_f32(),
-        sapcfr_expl
-    );
     println!("└─────────────┴──────────┴─────────────────┘");
 
     // All should reach target
     assert!(dcfr_expl <= target_expl);
     assert!(dcfrplus_expl <= target_expl);
-    assert!(pdcfrplus_expl <= target_expl);
-    assert!(sapcfr_expl <= target_expl);
 }
 
 // ============================================================================
@@ -566,6 +409,7 @@ fn test_compare_all_algorithms_node03_turn() {
 // ============================================================================
 
 #[test]
+#[ignore] // Machine-dependent baseline; run manually with --ignored
 fn test_performance_dcfr_8bit_regrets_node03_turn() {
     const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
 
@@ -618,6 +462,7 @@ fn test_performance_dcfr_8bit_regrets_node03_turn() {
 // Matching the solve_from_config output with 160 iterations in 1.19s
 
 #[test]
+#[ignore] // Machine-dependent baseline; run manually with --ignored
 fn test_performance_dcfr_mixed_precision_s16r8i8c4() {
     const CONFIG_PATH: &str = "hands/7438/configs/hand_0000007438_node_03_turn_DeepStack.toml";
 

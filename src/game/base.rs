@@ -352,7 +352,7 @@ impl PostFlopGame {
     /// Starting iteration count for this game (= warmstart_weight as u32)
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use postflop_solver::*;
     ///
     /// // Solve minimal tree

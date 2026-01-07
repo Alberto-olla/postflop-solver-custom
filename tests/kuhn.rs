@@ -96,6 +96,11 @@ impl Game for KuhnGame {
     }
 
     #[inline]
+    fn strategy_bits(&self) -> u8 {
+        32 // Use uncompressed strategy
+    }
+
+    #[inline]
     fn chance_factor(&self, _node: &Self::Node) -> usize {
         unreachable!()
     }

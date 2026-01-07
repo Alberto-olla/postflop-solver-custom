@@ -55,7 +55,7 @@ regret_bits = 16
 ip_bits = 16
 chance_bits = 16
 
-algorithm = "dcfr+"
+algorithm = "dcfr"
 enable_pruning = false
 lazy_normalization = false
 zstd_compression_level = 0

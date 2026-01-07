@@ -118,6 +118,20 @@ impl Game for LeducGame {
     }
 
     #[inline]
+    fn strategy_bits(&self) -> u8 {
+        if self.is_compression_enabled { 16 } else { 32 }
+    }
+
+    #[inline]
+    fn quantization_mode(&self) -> postflop_solver::QuantizationMode {
+        if self.is_compression_enabled {
+            postflop_solver::QuantizationMode::Int16
+        } else {
+            postflop_solver::QuantizationMode::Float32
+        }
+    }
+
+    #[inline]
     fn chance_factor(&self, _node: &Self::Node) -> usize {
         4
     }
