@@ -11,6 +11,76 @@ use crate::quantization::traits::QuantizationType;
 use crate::quantization::types::*;
 use crate::quantization::QuantizationMode;
 
+// ============================================================================
+// Regret Matching Dispatch
+// ============================================================================
+
+/// Generic regret matching dispatcher using quantization traits.
+/// This eliminates the need for separate regret_matching functions for each quantization type.
+///
+/// # Arguments
+/// - `game`: The game instance
+/// - `node`: The current node
+/// - `algorithm`: The CFR algorithm being used (affects signed/unsigned choice)
+/// - `num_actions`: Number of actions per hand
+///
+/// # Returns
+/// Strategy vector computed via regret matching
+#[inline]
+pub(super) fn regret_matching_dispatch<T: Game>(
+    game: &T,
+    node: &T::Node,
+    algorithm: CfrAlgorithm,
+    num_actions: usize,
+) -> Vec<f32> {
+    if !game.is_compression_enabled() {
+        // Float32 mode
+        Float32Quant::regret_matching(node.regrets(), 1.0, num_actions)
+    } else {
+        match game.quantization_mode() {
+            QuantizationMode::Float32 => {
+                Float32Quant::regret_matching(node.regrets(), 1.0, num_actions)
+            }
+            QuantizationMode::Int16 => Int16Quant::regret_matching(
+                node.regrets_compressed(),
+                node.regret_scale(),
+                num_actions,
+            ),
+            QuantizationMode::Int16Log => Int16LogQuant::regret_matching(
+                node.regrets_compressed(),
+                node.regret_scale(),
+                num_actions,
+            ),
+            QuantizationMode::Int8 => {
+                // DCFRPlus uses unsigned (non-negative regrets)
+                // Other algorithms use signed
+                if algorithm == CfrAlgorithm::DCFRPlus {
+                    Uint8Quant::regret_matching(node.regrets_u8(), node.regret_scale(), num_actions)
+                } else {
+                    Int8Quant::regret_matching(node.regrets_i8(), node.regret_scale(), num_actions)
+                }
+            }
+            QuantizationMode::Int4Packed => {
+                // DCFRPlus uses unsigned (non-negative regrets)
+                // Other algorithms use signed
+                if algorithm == CfrAlgorithm::DCFRPlus {
+                    Uint4PackedQuant::regret_matching(
+                        node.regrets_u4_packed(),
+                        node.regret_scale(),
+                        num_actions,
+                    )
+                } else {
+                    Int4PackedQuant::regret_matching(
+                        node.regrets_i4_packed(),
+                        node.regret_scale(),
+                        num_actions,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /// Computes strategy using PDCFR+ algorithm (Predicted Regret)
 ///
 /// Uses predicted regrets (storage4) instead of cumulative regrets
@@ -167,7 +237,7 @@ pub(super) fn compute_strategy<T: Game>(
         }
         _ => {
             // Standard DCFR/DCFR+ - use trait-based dispatch
-            super::regret_matching_dispatch(game, node, params.algorithm, num_actions)
+            regret_matching_dispatch(game, node, params.algorithm, num_actions)
         }
     }
 }
@@ -220,9 +290,12 @@ pub(super) fn update_cumulative_strategy_u16(
 
     let decoder = gamma_t * scale / u16::MAX as f32;
 
-    current_strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
-        *x += (*y as f32) * decoder;
-    });
+    current_strategy
+        .iter_mut()
+        .zip(&*cum_strategy)
+        .for_each(|(x, y)| {
+            *x += (*y as f32) * decoder;
+        });
 
     if !locking.is_empty() {
         current_strategy.iter_mut().zip(locking).for_each(|(d, s)| {
@@ -250,9 +323,12 @@ pub(super) fn update_cumulative_strategy_u8(
 
     let decoder = gamma_t * scale / u8::MAX as f32;
 
-    current_strategy.iter_mut().zip(&*cum_strategy).for_each(|(x, y)| {
-        *x += (*y as f32) * decoder;
-    });
+    current_strategy
+        .iter_mut()
+        .zip(&*cum_strategy)
+        .for_each(|(x, y)| {
+            *x += (*y as f32) * decoder;
+        });
 
     if !locking.is_empty() {
         current_strategy.iter_mut().zip(locking).for_each(|(d, s)| {

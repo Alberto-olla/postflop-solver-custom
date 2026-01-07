@@ -3,15 +3,16 @@ mod strategy;
 
 use crate::interface::*;
 use crate::mutex_like::*;
-use crate::quantization::traits::QuantizationType;
-use crate::quantization::types::*;
 use crate::quantization::QuantizationMode;
 use crate::sliceop::*;
 use crate::utility::*;
 use pruning::*;
-use strategy::*;
 use std::io::{self, Write};
 use std::mem::MaybeUninit;
+use strategy::{
+    compute_pdcfr_plus_strategy, compute_sapcfr_plus_strategy, compute_strategy,
+    regret_matching_dispatch,
+};
 
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
@@ -983,112 +984,15 @@ fn solve_recursive<T: Game>(
     // if the current player is not `player`
     else {
         // compute the strategy by regret-matching algorithm
-        let mut cfreach_actions = if params.algorithm == CfrAlgorithm::PDCFRPlus {
-            // PDCFR+ Strategy Calculation (Predicted Regret) for opponent
-            let node_num_hands = game.num_private_hands(node.player());
-            let mut predicted_regrets = Vec::with_capacity(num_actions * node_num_hands);
-
-            if game.is_compression_enabled() {
-                if game.quantization_mode() == QuantizationMode::Int8 {
-                    let predicted = node.prev_regrets_i8();
-                    let scale = node.prev_regret_scale();
-                    let decode_factor = 1.0 / i8::MAX as f32;
-
-                    for &r_pred in predicted.iter() {
-                        let v_pred = r_pred as f32 * scale * decode_factor;
-                        predicted_regrets.push(v_pred.max(0.0));
-                    }
-                } else {
-                    // Int16 quantization mode
-                    let predicted = node.prev_regrets_compressed();
-                    let scale = node.prev_regret_scale();
-                    let decode_factor = 1.0 / i16::MAX as f32;
-
-                    for &r_pred in predicted.iter() {
-                        let v_pred = r_pred as f32 * scale * decode_factor;
-                        predicted_regrets.push(v_pred.max(0.0));
-                    }
-                }
-            } else {
-                // Float32 mode (fallback)
-                let predicted = node.prev_regrets();
-                predicted_regrets.extend_from_slice(predicted);
+        let node_num_hands = game.num_private_hands(node.player());
+        let mut cfreach_actions = match params.algorithm {
+            CfrAlgorithm::PDCFRPlus => {
+                compute_pdcfr_plus_strategy(game, node, num_actions, node_num_hands)
             }
-
-            // Use Float32Quant for predicted regrets (already decoded)
-            Float32Quant::regret_matching(&predicted_regrets, 1.0, num_actions)
-        } else if params.algorithm == CfrAlgorithm::SAPCFRPlus {
-            // SAPCFR+ Strategy Calculation (Explicit Regret) for opponent
-            let node_num_hands = game.num_private_hands(node.player());
-            let mut explicit_regrets = Vec::with_capacity(num_actions * node_num_hands);
-
-            if game.is_compression_enabled() {
-                let quantization_mode = game.quantization_mode();
-                match quantization_mode {
-                    QuantizationMode::Int16 | QuantizationMode::Int16Log => {
-                        let implicit = node.regrets_compressed();
-                        let prev = node.prev_regrets_compressed();
-                        let scale_impl = node.regret_scale();
-                        let scale_prev = node.prev_regret_scale();
-                        let decode_factor = 1.0 / i16::MAX as f32;
-
-                        let num_elements = implicit.len();
-                        for i in 0..num_elements {
-                            let r_impl = implicit[i];
-                            let r_prev = prev[i];
-
-                            let v_impl = if quantization_mode == QuantizationMode::Int16Log {
-                                let log_val = r_impl as f32 * scale_impl * decode_factor;
-                                if log_val >= 0.0 {
-                                    log_val.exp() - 1.0
-                                } else {
-                                    -((-log_val).exp() - 1.0)
-                                }
-                            } else {
-                                r_impl as f32 * scale_impl * decode_factor
-                            };
-
-                            let v_prev = if quantization_mode == QuantizationMode::Int16Log {
-                                let log_val = r_prev as f32 * scale_prev * decode_factor;
-                                if log_val >= 0.0 {
-                                    log_val.exp() - 1.0
-                                } else {
-                                    -((-log_val).exp() - 1.0)
-                                }
-                            } else {
-                                r_prev as f32 * scale_prev * decode_factor
-                            };
-
-                            // Explicit = Implicit + 1/3 * Prev
-                            let explicit = v_impl + 0.33333333 * v_prev;
-                            explicit_regrets.push(explicit.max(0.0));
-                        }
-                    }
-                    _ => {
-                        // Fallback as Float32
-                        let implicit = node.regrets();
-                        let prev = node.prev_regrets();
-                        implicit.iter().zip(prev).for_each(|(&i, &p)| {
-                            let explicit = i + 0.33333333 * p;
-                            explicit_regrets.push(explicit.max(0.0));
-                        });
-                    }
-                }
-            } else {
-                // Float32 mode
-                let implicit = node.regrets();
-                let prev = node.prev_regrets();
-                implicit.iter().zip(prev).for_each(|(&i, &p)| {
-                    let explicit = i + 0.33333333 * p;
-                    explicit_regrets.push(explicit.max(0.0));
-                });
+            CfrAlgorithm::SAPCFRPlus => {
+                compute_sapcfr_plus_strategy(game, node, num_actions, node_num_hands)
             }
-
-            // Use Float32Quant for explicit regrets (already decoded)
-            Float32Quant::regret_matching(&explicit_regrets, 1.0, num_actions)
-        } else {
-            // Use trait-based dispatch for all other cases
-            regret_matching_dispatch(game, node, params.algorithm, num_actions)
+            _ => regret_matching_dispatch(game, node, params.algorithm, num_actions),
         };
 
         // node-locking
@@ -1117,75 +1021,5 @@ fn solve_recursive<T: Game>(
         let mut cfv_actions = cfv_actions.lock();
         unsafe { cfv_actions.set_len(num_actions * num_hands) };
         sum_slices_uninit(result, &cfv_actions);
-    }
-}
-
-/// Generic regret matching dispatcher using quantization traits.
-/// This eliminates the need for separate regret_matching functions for each quantization type.
-///
-/// # Arguments
-/// - `game`: The game instance
-/// - `node`: The current node
-/// - `algorithm`: The CFR algorithm being used (affects signed/unsigned choice)
-/// - `num_actions`: Number of actions per hand
-///
-/// # Returns
-/// Strategy vector computed via regret matching
-#[inline]
-fn regret_matching_dispatch<T: Game>(
-    game: &T,
-    node: &T::Node,
-    algorithm: CfrAlgorithm,
-    num_actions: usize,
-) -> Vec<f32> {
-    if !game.is_compression_enabled() {
-        // Float32 mode
-        Float32Quant::regret_matching(node.regrets(), 1.0, num_actions)
-    } else {
-        match game.quantization_mode() {
-            QuantizationMode::Float32 => {
-                Float32Quant::regret_matching(node.regrets(), 1.0, num_actions)
-            }
-            QuantizationMode::Int16 => {
-                Int16Quant::regret_matching(
-                    node.regrets_compressed(),
-                    node.regret_scale(),
-                    num_actions,
-                )
-            }
-            QuantizationMode::Int16Log => {
-                Int16LogQuant::regret_matching(
-                    node.regrets_compressed(),
-                    node.regret_scale(),
-                    num_actions,
-                )
-            }
-            QuantizationMode::Int8 => {
-                // DCFRPlus uses unsigned (non-negative regrets)
-                // Other algorithms use signed
-                if algorithm == CfrAlgorithm::DCFRPlus {
-                    Uint8Quant::regret_matching(node.regrets_u8(), node.regret_scale(), num_actions)
-                } else {
-                    Int8Quant::regret_matching(node.regrets_i8(), node.regret_scale(), num_actions)
-                }
-            }
-            QuantizationMode::Int4Packed => {
-                // DCFRPlus uses unsigned (non-negative regrets)
-                // Other algorithms use signed
-                if algorithm == CfrAlgorithm::DCFRPlus {
-                    Uint4PackedQuant::regret_matching(
-                        node.regrets_u4_packed(),
-                        node.regret_scale(),
-                        num_actions,
-                    )
-                } else {
-                    Int4PackedQuant::regret_matching(
-                        node.regrets_i4_packed(),
-                        node.regret_scale(),
-                        num_actions,
-                    )
-                }
-            }
-        }
     }
 }

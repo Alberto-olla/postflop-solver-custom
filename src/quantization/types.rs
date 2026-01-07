@@ -423,9 +423,9 @@ mod tests {
         // Data layout: actions are interleaved for multiple hands
         // [a0h0, a0h1, a1h0, a1h1, a2h0, a2h1] for 3 actions, 2 hands
         let regrets = vec![
-            1.0, -1.0,  // Action 0: hand0=1.0, hand1=-1.0 -> max(0)=[1.0, 0.0]
-            2.0, 0.0,   // Action 1: hand0=2.0, hand1=0.0 -> max(0)=[2.0, 0.0]
-            1.0, 0.0,   // Action 2: hand0=1.0, hand1=0.0 -> max(0)=[1.0, 0.0]
+            1.0, -1.0, // Action 0: hand0=1.0, hand1=-1.0 -> max(0)=[1.0, 0.0]
+            2.0, 0.0, // Action 1: hand0=2.0, hand1=0.0 -> max(0)=[2.0, 0.0]
+            1.0, 0.0, // Action 2: hand0=1.0, hand1=0.0 -> max(0)=[1.0, 0.0]
         ];
         // Sum for hand0: 1.0+2.0+1.0=4.0
         // Sum for hand1: 0.0+0.0+0.0=0.0 (uniform)
@@ -436,12 +436,36 @@ mod tests {
 
         assert_eq!(strategy.len(), 6);
         // Hand 0 values
-        assert!((strategy[0] - 0.25).abs() < 0.001, "strategy[0]={}", strategy[0]);
-        assert!((strategy[2] - 0.5).abs() < 0.001, "strategy[2]={}", strategy[2]);
-        assert!((strategy[4] - 0.25).abs() < 0.001, "strategy[4]={}", strategy[4]);
+        assert!(
+            (strategy[0] - 0.25).abs() < 0.001,
+            "strategy[0]={}",
+            strategy[0]
+        );
+        assert!(
+            (strategy[2] - 0.5).abs() < 0.001,
+            "strategy[2]={}",
+            strategy[2]
+        );
+        assert!(
+            (strategy[4] - 0.25).abs() < 0.001,
+            "strategy[4]={}",
+            strategy[4]
+        );
         // Hand 1 values (uniform)
-        assert!((strategy[1] - 0.333333).abs() < 0.001, "strategy[1]={}", strategy[1]);
-        assert!((strategy[3] - 0.333333).abs() < 0.001, "strategy[3]={}", strategy[3]);
-        assert!((strategy[5] - 0.333333).abs() < 0.001, "strategy[5]={}", strategy[5]);
+        assert!(
+            (strategy[1] - 0.333333).abs() < 0.001,
+            "strategy[1]={}",
+            strategy[1]
+        );
+        assert!(
+            (strategy[3] - 0.333333).abs() < 0.001,
+            "strategy[3]={}",
+            strategy[3]
+        );
+        assert!(
+            (strategy[5] - 0.333333).abs() < 0.001,
+            "strategy[5]={}",
+            strategy[5]
+        );
     }
 }
