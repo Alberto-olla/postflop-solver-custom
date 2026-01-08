@@ -64,9 +64,16 @@ dry_run = false
 
 # Warm-start configuration
 use_warmstart = true
-warmstart_minimal_exploitability_pct = 3.0   # Target 3% of pot exploitability for minimal tree
+warmstart_minimal_exploitability_pct = 0.1   # Target 1% of pot exploitability for minimal tree
 warmstart_minimal_max_iters = 1000          # Safety limit
-warmstart_weight = 50.0
+
+# Weight mode: number (e.g., 10.0), "auto" (Golden Section Search), or "adaptive"
+warmstart_weight = 1
+
+# Advanced warm-start options
+warmstart_interpolation = "logarithmic"      # "linear" or "logarithmic"
+warmstart_parallel = true                    # Enable parallel transfer
+#warmstart_auto_candidates = "1,200"          # Search range [min, max] for auto mode
 
 [output]
 directory = "hands/7438/solved_games"

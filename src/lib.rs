@@ -97,4 +97,7 @@ pub use quantization::*;
 pub use range::*;
 pub use solver::*;
 pub use utility::*;
-pub use warm_start::apply_warm_start;
+pub use warm_start::{
+    apply_warm_start, apply_warm_start_with_config, InterpolationMode, WarmStartConfig,
+    WarmStartResult, WarmStartWeightMode,
+};

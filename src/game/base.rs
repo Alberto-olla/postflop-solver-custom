@@ -400,6 +400,42 @@ impl PostFlopGame {
         Ok(warmstart_weight as u32)
     }
 
+    /// Apply warm-start with full configuration options.
+    ///
+    /// This method transfers accumulated regrets from a solved source game to this game,
+    /// using the specified configuration for interpolation mode, parallelization, and
+    /// adaptive weight calculation.
+    ///
+    /// # Arguments
+    /// * `source_game` - The solved minimal tree
+    /// * `source_iterations` - Number of iterations completed on source tree
+    /// * `config` - Warm-start configuration
+    ///
+    /// # Returns
+    /// Returns WarmStartResult with the effective weight used and search results (if auto mode)
+    pub fn warm_start_from_with_config(
+        &mut self,
+        source_game: &PostFlopGame,
+        source_iterations: u32,
+        config: &crate::WarmStartConfig,
+    ) -> Result<crate::WarmStartResult, String> {
+        if self.is_memory_allocated().is_none() {
+            return Err(
+                "Target game must have memory allocated (call allocate_memory first)".into(),
+            );
+        }
+        if source_game.is_memory_allocated().is_none() {
+            return Err("Source game must have memory allocated".into());
+        }
+
+        crate::warm_start::apply_warm_start_with_config(
+            source_game,
+            self,
+            source_iterations,
+            config,
+        )
+    }
+
     /// Sets the bunching effect configuration.
     ///
     /// **Warning**: Enabling the bunching effect will significantly slow down the solving process.

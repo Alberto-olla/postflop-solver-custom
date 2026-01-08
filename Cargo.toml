@@ -21,6 +21,7 @@ rand = "0.8"
 mimalloc = { version = "0.1", default-features = false, optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
 tcmalloc = { version = "0.3", optional = true }
+sysinfo = "0.31"
 
 [features]
 default = ["bincode", "rayon", "zstd"]

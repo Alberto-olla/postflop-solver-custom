@@ -21,6 +21,7 @@ use postflop_solver::*;
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
+use sysinfo::System;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -179,11 +180,36 @@ struct SolverSettings {
     #[serde(default = "default_warmstart_minimal_max_iters")]
     warmstart_minimal_max_iters: usize,
 
-    /// Warm-start normalization weight (controls how much influence minimal tree has)
-    /// Higher values = more influence from minimal tree
+    /// Warm-start weight mode. Can be:
+    /// - A number (e.g., 10.0) for fixed weight
+    /// - "auto" for automatic search of optimal weight
+    /// - "adaptive" for adaptive weight based on convergence
     /// Default: 10.0
     #[serde(default = "default_warmstart_weight")]
-    warmstart_weight: f32,
+    warmstart_weight: toml::Value,
+
+    /// Warm-start interpolation mode: "linear" or "logarithmic"
+    /// Logarithmic interpolation is better for strategic distance between bet sizes
+    /// Default: "logarithmic"
+    #[serde(default = "default_warmstart_interpolation")]
+    warmstart_interpolation: String,
+
+    /// Enable parallel warm-start transfer (uses Rayon)
+    /// Default: true
+    #[serde(default = "default_warmstart_parallel")]
+    warmstart_parallel: bool,
+
+    /// Target exploitability for adaptive weight calculation (as percentage of pot)
+    /// Used when warmstart_weight = "adaptive"
+    /// Default: 0.5 (0.5% of pot)
+    #[serde(default = "default_warmstart_target_exploitability_pct")]
+    warmstart_target_exploitability_pct: f32,
+
+    /// Candidate weights for auto search (comma-separated list)
+    /// Used when warmstart_weight = "auto"
+    /// Default: "1,2,5,10,20,50,100"
+    #[serde(default = "default_warmstart_auto_candidates")]
+    warmstart_auto_candidates: String,
 
     // DEPRECATED/EXPERIMENTAL: Legacy features
     /// DEPRECATED: Use granular *_bits parameters instead
@@ -309,9 +335,21 @@ fn default_warmstart_minimal_exploitability_pct() -> f32 {
 fn default_warmstart_minimal_max_iters() -> usize {
     1000
 } // Default: max 1000 iterations
-fn default_warmstart_weight() -> f32 {
-    10.0
+fn default_warmstart_weight() -> toml::Value {
+    toml::Value::Float(10.0)
 } // Default: weight 10.0
+fn default_warmstart_interpolation() -> String {
+    "logarithmic".to_string()
+} // Default: logarithmic interpolation
+fn default_warmstart_parallel() -> bool {
+    true
+} // Default: parallel enabled
+fn default_warmstart_target_exploitability_pct() -> f32 {
+    0.5
+} // Default: 0.5% of pot
+fn default_warmstart_auto_candidates() -> String {
+    "1,2,5,10,20,50,100".to_string()
+} // Default: standard candidate weights
 
 fn parse_bet_sizes(
     street: &StreetBetSizes,
@@ -384,6 +422,29 @@ fn configure_game(game: &mut PostFlopGame, config: &SolverSettings) -> Result<()
     game.set_regret_bits(config.regret_bits);
     game.set_ip_bits(config.ip_bits);
     game.set_chance_bits(config.chance_bits);
+
+    Ok(())
+}
+
+/// Configure game settings except precision (for warmstart RAM-based selection)
+fn configure_game_non_precision(
+    game: &mut PostFlopGame,
+    config: &SolverSettings,
+) -> Result<(), String> {
+    // Configure lazy normalization
+    if config.lazy_normalization {
+        game.set_lazy_normalization(true, config.lazy_normalization_freq);
+    }
+
+    // Configure CFR algorithm
+    let algorithm = config.get_algorithm()?;
+    game.set_cfr_algorithm(algorithm);
+
+    // Configure pruning
+    let pruning_mode = config.get_pruning_mode()?;
+    game.set_pruning_mode(pruning_mode);
+
+    // Note: Precision bits are NOT set here - caller handles them
 
     Ok(())
 }
@@ -635,7 +696,44 @@ fn main() {
         let mut minimal_game = PostFlopGame::with_config(card_config.clone(), minimal_action_tree)
             .expect("Failed to create minimal game");
 
-        configure_game(&mut minimal_game, &config.solver)
+        // RAM-based auto 32-bit selection for warmstart
+        // Check if we can use 32-bit precision for better accuracy during warmstart
+        let mut sys = System::new_all();
+        sys.refresh_memory();
+        let available_ram = sys.total_memory(); // in bytes
+        let ram_threshold = (available_ram as f64 * 0.8) as u64; // 80% of total RAM
+
+        // Estimate memory with 32-bit on all settings
+        minimal_game.set_strategy_bits(32);
+        minimal_game.set_regret_bits(32);
+        minimal_game.set_ip_bits(32);
+        minimal_game.set_chance_bits(32);
+        let mem_32bit = minimal_game.estimated_memory_usage_detailed().total();
+
+        let use_32bit_warmstart = mem_32bit <= ram_threshold;
+
+        if use_32bit_warmstart {
+            println!(
+                "  [RAM Check] Using 32-bit precision for warmstart ({} required, {} available at 80%)",
+                format_size(mem_32bit),
+                format_size(ram_threshold)
+            );
+            // Keep 32-bit settings (already set above)
+        } else {
+            println!(
+                "  [RAM Check] Using TOML-specified precision ({} would exceed {} available at 80%)",
+                format_size(mem_32bit),
+                format_size(ram_threshold)
+            );
+            // Restore TOML-specified settings
+            minimal_game.set_strategy_bits(config.solver.strategy_bits);
+            minimal_game.set_regret_bits(config.solver.regret_bits);
+            minimal_game.set_ip_bits(config.solver.ip_bits);
+            minimal_game.set_chance_bits(config.solver.chance_bits);
+        }
+
+        // Configure the rest (algorithm, pruning, lazy normalization)
+        configure_game_non_precision(&mut minimal_game, &config.solver)
             .expect("Failed to configure minimal game");
         minimal_game.allocate_memory();
 
@@ -684,15 +782,102 @@ fn main() {
         configure_game(&mut full_game, &config.solver).expect("Failed to configure full game");
         full_game.allocate_memory();
 
-        // Apply warm-start
-        start_iteration = full_game
-            .warm_start_from(&minimal_game, minimal_iters, config.solver.warmstart_weight)
+        // Build warm-start configuration
+        let interpolation_mode = match config.solver.warmstart_interpolation.to_lowercase().as_str() {
+            "linear" => postflop_solver::InterpolationMode::Linear,
+            "logarithmic" | "log" => postflop_solver::InterpolationMode::Logarithmic,
+            _ => {
+                eprintln!(
+                    "Warning: Unknown interpolation mode '{}', using logarithmic",
+                    config.solver.warmstart_interpolation
+                );
+                postflop_solver::InterpolationMode::Logarithmic
+            }
+        };
+
+        // Parse weight mode from config
+        let weight_mode = match &config.solver.warmstart_weight {
+            toml::Value::Float(f) => {
+                postflop_solver::WarmStartWeightMode::Fixed(*f as f32)
+            }
+            toml::Value::Integer(i) => {
+                postflop_solver::WarmStartWeightMode::Fixed(*i as f32)
+            }
+            toml::Value::String(s) => {
+                match s.to_lowercase().as_str() {
+                    "auto" => {
+                        // Parse candidate weights
+                        let candidates: Vec<f32> = config.solver.warmstart_auto_candidates
+                            .split(',')
+                            .filter_map(|s| s.trim().parse().ok())
+                            .collect();
+                        postflop_solver::WarmStartWeightMode::Auto {
+                            candidates: if candidates.is_empty() {
+                                vec![1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+                            } else {
+                                candidates
+                            },
+                        }
+                    }
+                    "adaptive" => {
+                        postflop_solver::WarmStartWeightMode::Adaptive {
+                            base_weight: 10.0,
+                            target_exploitability_pct: config.solver.warmstart_target_exploitability_pct,
+                        }
+                    }
+                    _ => {
+                        // Try to parse as number
+                        if let Ok(f) = s.parse::<f32>() {
+                            postflop_solver::WarmStartWeightMode::Fixed(f)
+                        } else {
+                            eprintln!("Warning: Unknown weight mode '{}', using fixed 10.0", s);
+                            postflop_solver::WarmStartWeightMode::Fixed(10.0)
+                        }
+                    }
+                }
+            }
+            _ => {
+                eprintln!("Warning: Invalid warmstart_weight type, using fixed 10.0");
+                postflop_solver::WarmStartWeightMode::Fixed(10.0)
+            }
+        };
+
+        let warmstart_config = postflop_solver::WarmStartConfig {
+            interpolation_mode,
+            parallel: config.solver.warmstart_parallel,
+            weight_mode: weight_mode.clone(),
+        };
+
+        println!("  Warm-start config:");
+        println!("    - Interpolation: {:?}", interpolation_mode);
+        println!("    - Parallel: {}", warmstart_config.parallel);
+        match &weight_mode {
+            postflop_solver::WarmStartWeightMode::Fixed(w) => {
+                println!("    - Weight mode: Fixed({:.1})", w);
+            }
+            postflop_solver::WarmStartWeightMode::Adaptive { base_weight, target_exploitability_pct } => {
+                println!("    - Weight mode: Adaptive (base={:.1}, target_expl={:.2}%)", base_weight, target_exploitability_pct);
+            }
+            postflop_solver::WarmStartWeightMode::Auto { candidates } => {
+                println!("    - Weight mode: Auto (candidates: {:?})", candidates);
+            }
+        }
+
+        // Apply warm-start with configuration
+        let warmstart_result = full_game
+            .warm_start_from_with_config(&minimal_game, minimal_iters, &warmstart_config)
             .expect("Failed to apply warm-start");
 
+        start_iteration = warmstart_result.effective_weight as u32;
+
         println!(
-            "  Warm-start applied! Starting from iteration {}",
-            start_iteration
+            "  Warm-start applied! Effective weight: {:.1}",
+            warmstart_result.effective_weight
         );
+        if let Some(expl) = warmstart_result.exploitability {
+            println!("  Initial exploitability: {:.6}", expl);
+        }
+        println!("  Starting from iteration {}", start_iteration);
         println!("  Phase 3: Solving full tree from warm-start...\n");
 
         // Replace game with full game
