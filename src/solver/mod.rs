@@ -317,18 +317,19 @@ fn solve_recursive<T: Game>(
     // if the current player is `player`
     else if node.player() == player {
         // compute the counterfactual values of each action
-        // Use manual iteration to support pruning (branch skipping)
         let pruning_mode = game.pruning_mode();
+
         if pruning_mode != PruningMode::Disabled {
-            // Pruning enabled: check each action before recursing
+            // Pruning enabled: pre-compute prune flags, then parallelize execution
             let pruning_threshold = compute_pruning_threshold(
                 game.tree_config().effective_stack,
                 params.current_iteration,
             );
 
-            for action in node.action_indices() {
-                // Check if this action should be skipped (pruned)
-                let should_skip = match pruning_mode {
+            // Phase 1: Pre-compute prune flags (fast, sequential, read-only)
+            let prune_flags: Vec<bool> = node
+                .action_indices()
+                .map(|action| match pruning_mode {
                     PruningMode::Max => {
                         should_prune_action_max(game, node, action, num_hands, pruning_threshold)
                     }
@@ -336,16 +337,18 @@ fn solve_recursive<T: Game>(
                         should_prune_action_average(game, node, action, num_hands, pruning_threshold)
                     }
                     PruningMode::Disabled => unreachable!(),
-                };
+                })
+                .collect();
 
-                if should_skip {
-                    // Skip this branch - fill with zeros
+            // Phase 2: Parallel execution using pre-computed flags
+            for_each_child(node, |action| {
+                if prune_flags[action] {
+                    // Skip this branch - fill with zeros (lock-free write to own row)
                     let mut cfv_lock = cfv_actions.lock();
                     let row = row_mut(cfv_lock.spare_capacity_mut(), action, num_hands);
                     for elem in row {
                         elem.write(0.0);
                     }
-                    drop(cfv_lock); // Release lock before recursion
                 } else {
                     // Normal recursion
                     solve_recursive(
@@ -357,7 +360,7 @@ fn solve_recursive<T: Game>(
                         params,
                     );
                 }
-            }
+            });
         } else {
             // Pruning disabled: use original parallel for_each
             for_each_child(node, |action| {

@@ -101,6 +101,9 @@ pub(crate) unsafe fn sum_slices_uninit_avx2<'a>(
 /// AVX2-optimized version of fma_slices_uninit (THE MOST CRITICAL OPERATION!)
 /// Performs: dst = sum of (src1[i] * src2[i]) across all chunks
 /// This is the heart of CFR calculation and benefits massively from FMA instructions
+///
+/// Uses 4x loop unrolling to process 32 elements per iteration, hiding FMA latency
+/// by keeping 4 independent operations in flight.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 #[inline]
@@ -111,8 +114,30 @@ pub(crate) unsafe fn fma_slices_uninit_avx2<'a>(
 ) -> &'a mut [f32] {
     let len = dst.len();
 
-    // Initialize dst with first chunk (s1[i] * s2[i])
+    // Initialize dst with first chunk (s1[i] * s2[i]) - 4x unrolled
     let mut i = 0;
+    while i + 32 <= len {
+        let s1_0 = _mm256_loadu_ps(src1.as_ptr().add(i));
+        let s2_0 = _mm256_loadu_ps(src2.as_ptr().add(i));
+        let s1_1 = _mm256_loadu_ps(src1.as_ptr().add(i + 8));
+        let s2_1 = _mm256_loadu_ps(src2.as_ptr().add(i + 8));
+        let s1_2 = _mm256_loadu_ps(src1.as_ptr().add(i + 16));
+        let s2_2 = _mm256_loadu_ps(src2.as_ptr().add(i + 16));
+        let s1_3 = _mm256_loadu_ps(src1.as_ptr().add(i + 24));
+        let s2_3 = _mm256_loadu_ps(src2.as_ptr().add(i + 24));
+
+        let res0 = _mm256_mul_ps(s1_0, s2_0);
+        let res1 = _mm256_mul_ps(s1_1, s2_1);
+        let res2 = _mm256_mul_ps(s1_2, s2_2);
+        let res3 = _mm256_mul_ps(s1_3, s2_3);
+
+        _mm256_storeu_ps(dst.as_mut_ptr().add(i) as *mut f32, res0);
+        _mm256_storeu_ps(dst.as_mut_ptr().add(i + 8) as *mut f32, res1);
+        _mm256_storeu_ps(dst.as_mut_ptr().add(i + 16) as *mut f32, res2);
+        _mm256_storeu_ps(dst.as_mut_ptr().add(i + 24) as *mut f32, res3);
+        i += 32;
+    }
+    // Handle remaining 8-element blocks
     while i + 8 <= len {
         let s1_vec = _mm256_loadu_ps(src1.as_ptr().add(i));
         let s2_vec = _mm256_loadu_ps(src2.as_ptr().add(i));
@@ -120,6 +145,7 @@ pub(crate) unsafe fn fma_slices_uninit_avx2<'a>(
         _mm256_storeu_ps(dst.as_mut_ptr().add(i) as *mut f32, res);
         i += 8;
     }
+    // Handle remaining scalar elements
     for j in i..len {
         dst.get_unchecked_mut(j)
             .write(*src1.get_unchecked(j) * *src2.get_unchecked(j));
@@ -127,26 +153,65 @@ pub(crate) unsafe fn fma_slices_uninit_avx2<'a>(
 
     let dst = &mut *(dst as *mut _ as *mut [f32]);
 
-    // Accumulate remaining chunks with FMA: dst += s1 * s2
-    src1[len..]
-        .chunks_exact(len)
-        .zip(src2[len..].chunks_exact(len))
-        .for_each(|(s1_chunk, s2_chunk)| {
-            let mut i = 0;
-            while i + 8 <= len {
-                let d_vec = _mm256_loadu_ps(dst.as_ptr().add(i));
-                let s1_vec = _mm256_loadu_ps(s1_chunk.as_ptr().add(i));
-                let s2_vec = _mm256_loadu_ps(s2_chunk.as_ptr().add(i));
-                // FMA: d = d + (s1 * s2)
-                let res = _mm256_fmadd_ps(s1_vec, s2_vec, d_vec);
-                _mm256_storeu_ps(dst.as_mut_ptr().add(i), res);
-                i += 8;
-            }
-            for j in i..len {
-                *dst.get_unchecked_mut(j) +=
-                    *s1_chunk.get_unchecked(j) * *s2_chunk.get_unchecked(j);
-            }
-        });
+    // Accumulate remaining chunks with FMA: dst += s1 * s2 - 4x unrolled
+    let num_chunks = (src1.len() - len) / len;
+    let s1_rest = &src1[len..];
+    let s2_rest = &src2[len..];
+
+    for chunk_idx in 0..num_chunks {
+        let s1_chunk = &s1_rest[chunk_idx * len..];
+        let s2_chunk = &s2_rest[chunk_idx * len..];
+
+        let mut i = 0;
+        // 4x unrolled FMA loop for better instruction-level parallelism
+        while i + 32 <= len {
+            // Load dst values
+            let d0 = _mm256_loadu_ps(dst.as_ptr().add(i));
+            let d1 = _mm256_loadu_ps(dst.as_ptr().add(i + 8));
+            let d2 = _mm256_loadu_ps(dst.as_ptr().add(i + 16));
+            let d3 = _mm256_loadu_ps(dst.as_ptr().add(i + 24));
+
+            // Load src1 values
+            let s1_0 = _mm256_loadu_ps(s1_chunk.as_ptr().add(i));
+            let s1_1 = _mm256_loadu_ps(s1_chunk.as_ptr().add(i + 8));
+            let s1_2 = _mm256_loadu_ps(s1_chunk.as_ptr().add(i + 16));
+            let s1_3 = _mm256_loadu_ps(s1_chunk.as_ptr().add(i + 24));
+
+            // Load src2 values
+            let s2_0 = _mm256_loadu_ps(s2_chunk.as_ptr().add(i));
+            let s2_1 = _mm256_loadu_ps(s2_chunk.as_ptr().add(i + 8));
+            let s2_2 = _mm256_loadu_ps(s2_chunk.as_ptr().add(i + 16));
+            let s2_3 = _mm256_loadu_ps(s2_chunk.as_ptr().add(i + 24));
+
+            // FMA: d = d + (s1 * s2) - 4 independent operations
+            let res0 = _mm256_fmadd_ps(s1_0, s2_0, d0);
+            let res1 = _mm256_fmadd_ps(s1_1, s2_1, d1);
+            let res2 = _mm256_fmadd_ps(s1_2, s2_2, d2);
+            let res3 = _mm256_fmadd_ps(s1_3, s2_3, d3);
+
+            // Store results
+            _mm256_storeu_ps(dst.as_mut_ptr().add(i), res0);
+            _mm256_storeu_ps(dst.as_mut_ptr().add(i + 8), res1);
+            _mm256_storeu_ps(dst.as_mut_ptr().add(i + 16), res2);
+            _mm256_storeu_ps(dst.as_mut_ptr().add(i + 24), res3);
+
+            i += 32;
+        }
+        // Handle remaining 8-element blocks
+        while i + 8 <= len {
+            let d_vec = _mm256_loadu_ps(dst.as_ptr().add(i));
+            let s1_vec = _mm256_loadu_ps(s1_chunk.as_ptr().add(i));
+            let s2_vec = _mm256_loadu_ps(s2_chunk.as_ptr().add(i));
+            let res = _mm256_fmadd_ps(s1_vec, s2_vec, d_vec);
+            _mm256_storeu_ps(dst.as_mut_ptr().add(i), res);
+            i += 8;
+        }
+        // Handle remaining scalar elements
+        for j in i..len {
+            *dst.get_unchecked_mut(j) +=
+                *s1_chunk.get_unchecked(j) * *s2_chunk.get_unchecked(j);
+        }
+    }
 
     dst
 }
