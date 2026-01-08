@@ -330,13 +330,13 @@ fn parse_bet_sizes(
     )
 }
 
-/// Replace "full", "medium", and other complex presets with "minimal" for warm-start
+/// Replace "full", "medium", and other complex presets with simple sizing for warm-start
 fn replace_full_with_minimal(bet_sizes: &BetSizes) -> BetSizes {
     let replace_string = |s: &str| -> String {
         let s_lower = s.to_lowercase();
-        // Replace complex presets with minimal
+        // Replace complex presets with edge + all-in
         if s_lower == "full" || s_lower == "medium" {
-            "minimal".to_string()
+            "e, a".to_string()
         } else {
             s.to_string()
         }
