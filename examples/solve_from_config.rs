@@ -21,7 +21,6 @@ use postflop_solver::*;
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
-use sysinfo::System;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -426,29 +425,6 @@ fn configure_game(game: &mut PostFlopGame, config: &SolverSettings) -> Result<()
     Ok(())
 }
 
-/// Configure game settings except precision (for warmstart RAM-based selection)
-fn configure_game_non_precision(
-    game: &mut PostFlopGame,
-    config: &SolverSettings,
-) -> Result<(), String> {
-    // Configure lazy normalization
-    if config.lazy_normalization {
-        game.set_lazy_normalization(true, config.lazy_normalization_freq);
-    }
-
-    // Configure CFR algorithm
-    let algorithm = config.get_algorithm()?;
-    game.set_cfr_algorithm(algorithm);
-
-    // Configure pruning
-    let pruning_mode = config.get_pruning_mode()?;
-    game.set_pruning_mode(pruning_mode);
-
-    // Note: Precision bits are NOT set here - caller handles them
-
-    Ok(())
-}
-
 fn main() {
     // Read config file
     let config_path = std::env::args()
@@ -696,44 +672,7 @@ fn main() {
         let mut minimal_game = PostFlopGame::with_config(card_config.clone(), minimal_action_tree)
             .expect("Failed to create minimal game");
 
-        // RAM-based auto 32-bit selection for warmstart
-        // Check if we can use 32-bit precision for better accuracy during warmstart
-        let mut sys = System::new_all();
-        sys.refresh_memory();
-        let available_ram = sys.total_memory(); // in bytes
-        let ram_threshold = (available_ram as f64 * 0.8) as u64; // 80% of total RAM
-
-        // Estimate memory with 32-bit on all settings
-        minimal_game.set_strategy_bits(32);
-        minimal_game.set_regret_bits(32);
-        minimal_game.set_ip_bits(32);
-        minimal_game.set_chance_bits(32);
-        let mem_32bit = minimal_game.estimated_memory_usage_detailed().total();
-
-        let use_32bit_warmstart = mem_32bit <= ram_threshold;
-
-        if use_32bit_warmstart {
-            println!(
-                "  [RAM Check] Using 32-bit precision for warmstart ({} required, {} available at 80%)",
-                format_size(mem_32bit),
-                format_size(ram_threshold)
-            );
-            // Keep 32-bit settings (already set above)
-        } else {
-            println!(
-                "  [RAM Check] Using TOML-specified precision ({} would exceed {} available at 80%)",
-                format_size(mem_32bit),
-                format_size(ram_threshold)
-            );
-            // Restore TOML-specified settings
-            minimal_game.set_strategy_bits(config.solver.strategy_bits);
-            minimal_game.set_regret_bits(config.solver.regret_bits);
-            minimal_game.set_ip_bits(config.solver.ip_bits);
-            minimal_game.set_chance_bits(config.solver.chance_bits);
-        }
-
-        // Configure the rest (algorithm, pruning, lazy normalization)
-        configure_game_non_precision(&mut minimal_game, &config.solver)
+        configure_game(&mut minimal_game, &config.solver)
             .expect("Failed to configure minimal game");
         minimal_game.allocate_memory();
 
