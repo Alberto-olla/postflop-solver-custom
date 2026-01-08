@@ -62,6 +62,7 @@ mod file;
 mod action_tree;
 mod atomic_float;
 mod bet_size;
+mod buffer_pool;
 mod bunching;
 mod card;
 mod game;
