@@ -22,16 +22,6 @@ mimalloc = { version = "0.1", default-features = false, optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
 tcmalloc = { version = "0.3", optional = true }
 
-# Profilo per profiling con simboli di debug
-[profile.release-with-debug]
-inherits = "release"
-debug = true
-
-# Profilo release con massima ottimizzazione (per confronto)
-[profile.release]
-debug = false
-# lto = "thin"  # Decommentare per LTO (più lento a compilare, più veloce a runtime)
-
 [features]
 default = ["bincode", "rayon", "zstd"]
 custom-alloc = []

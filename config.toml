@@ -77,7 +77,8 @@ regret_bits = 16
 ip_bits = 16
 chance_bits = 16
 
-# Algorithm: "dcfr", "dcfr+"
+# Algorithm: "dcfr", "dcfr+", "pdcfr+", "sapcfr+"
+# Note: pdcfr+ and sapcfr+ require 50% more memory (storage4)
 algorithm = "dcfr"
 
 # Enable regret-based pruning (dynamic branch skipping)

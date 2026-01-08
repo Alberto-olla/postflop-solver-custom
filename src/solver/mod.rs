@@ -2,8 +2,8 @@ mod pruning;
 mod regrets;
 mod strategy;
 
-use crate::buffer_pool::ConcurrentCfvBuffer;
 use crate::interface::*;
+use crate::mutex_like::*;
 use crate::sliceop::*;
 use crate::utility::*;
 use pruning::{compute_pruning_threshold, should_prune_action_average, should_prune_action_max};
@@ -250,8 +250,10 @@ fn solve_recursive<T: Game>(
     }
 
     // allocate memory for storing the counterfactual values
-    // Uses thread-local buffer stack for zero-allocation hot path
-    let cfv_actions = ConcurrentCfvBuffer::new(num_actions, num_hands);
+    #[cfg(feature = "custom-alloc")]
+    let cfv_actions = MutexLike::new(Vec::with_capacity_in(num_actions * num_hands, StackAlloc));
+    #[cfg(not(feature = "custom-alloc"))]
+    let cfv_actions = MutexLike::new(Vec::with_capacity(num_actions * num_hands));
 
     // if the `node` is chance
     if node.is_chance() {
@@ -267,10 +269,10 @@ fn solve_recursive<T: Game>(
         );
         unsafe { cfreach_updated.set_len(cfreach.len()) };
 
-        // compute the counterfactual values of each action (lock-free parallel)
+        // compute the counterfactual values of each action
         for_each_child(node, |action| {
             solve_recursive(
-                cfv_actions.row_mut(action),
+                row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
                 player,
@@ -285,24 +287,19 @@ fn solve_recursive<T: Game>(
         #[cfg(not(feature = "custom-alloc"))]
         let mut result_f64 = Vec::with_capacity(num_hands);
 
-        // sum up the counterfactual values (all actions now initialized)
-        let cfv_slice = unsafe { cfv_actions.as_slice() };
-        sum_slices_f64_uninit(result_f64.spare_capacity_mut(), cfv_slice);
+        // sum up the counterfactual values
+        let mut cfv_actions = cfv_actions.lock();
+        unsafe { cfv_actions.set_len(num_actions * num_hands) };
+        sum_slices_f64_uninit(result_f64.spare_capacity_mut(), &cfv_actions);
         unsafe { result_f64.set_len(num_hands) };
 
         // get information about isomorphic chances
         let isomorphic_chances = game.isomorphic_chances(node);
 
         // process isomorphic chances
-        let cfv_mut = unsafe {
-            std::slice::from_raw_parts_mut(
-                cfv_actions.as_slice().as_ptr() as *mut f32,
-                cfv_actions.size()
-            )
-        };
         for (i, &isomorphic_index) in isomorphic_chances.iter().enumerate() {
             let swap_list = &game.isomorphic_swap(node, i)[player];
-            let tmp = row_mut(cfv_mut, isomorphic_index as usize, num_hands);
+            let tmp = row_mut(&mut cfv_actions, isomorphic_index as usize, num_hands);
 
             apply_swap(tmp, swap_list);
 
@@ -320,41 +317,39 @@ fn solve_recursive<T: Game>(
     // if the current player is `player`
     else if node.player() == player {
         // compute the counterfactual values of each action
+        // Use manual iteration to support pruning (branch skipping)
         let pruning_mode = game.pruning_mode();
         if pruning_mode != PruningMode::Disabled {
-            // Pruning enabled: pre-compute which actions to prune, then process in parallel
+            // Pruning enabled: check each action before recursing
             let pruning_threshold = compute_pruning_threshold(
                 game.tree_config().effective_stack,
                 params.current_iteration,
             );
 
-            // Pre-compute pruning decisions (read-only on regrets, safe to do first)
-            let prune_flags: Vec<bool> = node.action_indices()
-                .map(|action| {
-                    match pruning_mode {
-                        PruningMode::Max => {
-                            should_prune_action_max(game, node, action, num_hands, pruning_threshold)
-                        }
-                        PruningMode::Average => {
-                            should_prune_action_average(game, node, action, num_hands, pruning_threshold)
-                        }
-                        PruningMode::Disabled => unreachable!(),
+            for action in node.action_indices() {
+                // Check if this action should be skipped (pruned)
+                let should_skip = match pruning_mode {
+                    PruningMode::Max => {
+                        should_prune_action_max(game, node, action, num_hands, pruning_threshold)
                     }
-                })
-                .collect();
+                    PruningMode::Average => {
+                        should_prune_action_average(game, node, action, num_hands, pruning_threshold)
+                    }
+                    PruningMode::Disabled => unreachable!(),
+                };
 
-            // Now process all actions in parallel (lock-free)
-            for_each_child(node, |action| {
-                if prune_flags[action] {
-                    // Skip this branch - fill with zeros (lock-free)
-                    let row = cfv_actions.row_mut(action);
+                if should_skip {
+                    // Skip this branch - fill with zeros
+                    let mut cfv_lock = cfv_actions.lock();
+                    let row = row_mut(cfv_lock.spare_capacity_mut(), action, num_hands);
                     for elem in row {
                         elem.write(0.0);
                     }
+                    drop(cfv_lock); // Release lock before recursion
                 } else {
-                    // Normal recursion (lock-free)
+                    // Normal recursion
                     solve_recursive(
-                        cfv_actions.row_mut(action),
+                        row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                         game,
                         &mut node.play(action),
                         player,
@@ -362,12 +357,12 @@ fn solve_recursive<T: Game>(
                         params,
                     );
                 }
-            });
+            }
         } else {
-            // Pruning disabled: parallel for_each (lock-free)
+            // Pruning disabled: use original parallel for_each
             for_each_child(node, |action| {
                 solve_recursive(
-                    cfv_actions.row_mut(action),
+                    row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                     game,
                     &mut node.play(action),
                     player,
@@ -377,16 +372,17 @@ fn solve_recursive<T: Game>(
             });
         }
 
-        // compute the strategy by regret-matching algorithm
+        // compute the strategy by regret-maching algorithm
         let mut strategy = compute_strategy(game, node, params, num_actions, num_hands);
 
         // node-locking
         let locking = game.locking_strategy(node);
         crate::utility::apply_locking_strategy(&mut strategy, locking);
 
-        // sum up the counterfactual values (all actions now initialized)
-        let cfv_slice = unsafe { cfv_actions.as_slice() };
-        let result = fma_slices_uninit(result, &strategy, cfv_slice);
+        // sum up the counterfactual values
+        let mut cfv_actions = cfv_actions.lock();
+        unsafe { cfv_actions.set_len(num_actions * num_hands) };
+        let result = fma_slices_uninit(result, &strategy, &cfv_actions);
 
         // Update cumulative strategy - dispatch based on strategy_bits (independent of regret compression)
         match game.strategy_bits() {
@@ -460,16 +456,10 @@ fn solve_recursive<T: Game>(
         }
 
         // Update cumulative regrets - dispatch to regrets module
-        let cfv_mut = unsafe {
-            std::slice::from_raw_parts_mut(
-                cfv_actions.as_slice().as_ptr() as *mut f32,
-                cfv_actions.size()
-            )
-        };
         update_regrets(
             game,
             node,
-            cfv_mut,
+            &mut cfv_actions,
             result,
             locking,
             params,
@@ -501,10 +491,10 @@ fn solve_recursive<T: Game>(
             mul_slice(row, cfreach);
         });
 
-        // compute the counterfactual values of each action (lock-free parallel)
+        // compute the counterfactual values of each action
         for_each_child(node, |action| {
             solve_recursive(
-                cfv_actions.row_mut(action),
+                row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
                 player,
@@ -513,8 +503,9 @@ fn solve_recursive<T: Game>(
             );
         });
 
-        // sum up the counterfactual values (all actions now initialized)
-        let cfv_slice = unsafe { cfv_actions.as_slice() };
-        sum_slices_uninit(result, cfv_slice);
+        // sum up the counterfactual values
+        let mut cfv_actions = cfv_actions.lock();
+        unsafe { cfv_actions.set_len(num_actions * num_hands) };
+        sum_slices_uninit(result, &cfv_actions);
     }
 }
